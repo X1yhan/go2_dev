@@ -1,0 +1,16 @@
+# colcon 构建产物
+build/
+install/
+log/
+
+# 上游 SDK（从桌面压缩包解压，不纳入版本管理）
+third_party/
+
+# Python
+__pycache__/
+*.pyc
+
+# 其他
+*.zip
+*.log
+.DS_Store

@@ -1,0 +1,13 @@
+{
+  "files.watcherExclude": {
+    "**/build/**": true,
+    "**/install/**": true,
+    "**/log/**": true,
+    "**/third_party/**": true
+  },
+  "search.exclude": {
+    "**/build": true,
+    "**/install": true,
+    "**/log": true
+  }
+}

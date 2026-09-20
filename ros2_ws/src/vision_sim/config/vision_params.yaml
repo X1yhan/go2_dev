@@ -1,0 +1,55 @@
+target_director:
+  ros__parameters:
+    target_name: target_ball
+    world_name: vision_bench
+    trajectory: sine          # static | line | sine | circle
+    rate: 30.0
+    speed: 0.5                # m/s
+    amplitude: 1.0            # m, line/sine
+    radius: 1.0               # m, circle
+    center_x: 1.5             # m, trajectory center (world frame)
+    center_y: 0.0
+    height: 0.15              # m, ball center (radius) while on the ground
+    publish_ground_truth: true
+
+target_detector:
+  ros__parameters:
+    image_topic: /viz/camera/image
+    detections_topic: /target/detections
+    debug_image_topic: /target/debug_image
+    class_id: target_ball
+    hsv_lower_1: [0, 120, 70]     # red, lower hue range
+    hsv_upper_1: [10, 255, 255]
+    hsv_lower_2: [170, 120, 70]   # red, upper hue range
+    hsv_upper_2: [180, 255, 255]
+    min_area: 100.0               # px^2
+    max_area: 0.0                 # 0 = no limit
+    morph_kernel: 5               # 0 = disabled
+    publish_debug_image: true
+
+target_localizer:
+  ros__parameters:
+    detections_topic: /target/detections
+    depth_topic: /viz/camera/depth_image
+    camera_info_topic: /viz/camera/camera_info
+    depth_frame: camera_depth_optical_frame
+    world_frame: world
+    position_camera_topic: /target/position_camera
+    position_world_topic: /target/position_world
+    marker_topic: /target/marker
+    min_depth: 0.05               # m
+    max_depth: 10.0               # m
+    patch_fraction: 0.5           # central fraction of the bbox used for depth
+    max_stamp_dt: 0.2             # s, detection <-> depth tolerance
+    target_radius: 0.15           # m, sphere radius -> recover ball center
+    publish_world: true
+
+eval_monitor:
+  ros__parameters:
+    ground_truth_topic: /target/ground_truth
+    estimate_topic: /target/position_world
+    error_topic: /target/error
+    stats_topic: /target/error_stats
+    window: 300
+    max_stamp_dt: 0.5             # s, GT <-> estimate matching tolerance
+    report_period: 5.0

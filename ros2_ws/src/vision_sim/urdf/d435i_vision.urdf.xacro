@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+  Standalone Intel RealSense D435i for Gazebo Fortress vision bench.
+
+  - Kinematics/meshes: realsense2_description (official URDF)
+  - Simulated sensor: gz-sim rgbd_camera attached to camera_link
+      publishes: <topic>/image, <topic>/depth_image, <topic>/camera_info, <topic>/points
+  - Sensor axis convention matches the RealSense model: camera_link is
+    x-forward, y-left, z-up, so camera_depth_optical_frame is the optical
+    frame to use for perspective projection.
+
+  Defaults follow the Intel D435i specs (depth: 87 x 58 deg FOV, 30 fps,
+  0.3 m - 3 m usable range; far clip relaxed to 10 m for the bench).
+-->
+<robot name="d435i_vision" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="width" default="640"/>
+  <xacro:arg name="height" default="360"/>
+  <xacro:arg name="fps" default="30"/>
+  <xacro:arg name="hfov" default="1.518"/>       <!-- 87 deg, depth H-FOV -->
+  <xacro:arg name="clip_near" default="0.3"/>
+  <xacro:arg name="clip_far" default="10.0"/>
+  <xacro:arg name="use_mesh" default="true"/>
+  <xacro:arg name="topic" default="/viz/camera"/>
+  <xacro:arg name="visualize" default="false"/>
+
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+
+  <!-- root link: where the camera is mounted in the world -->
+  <link name="camera_mount"/>
+
+  <xacro:sensor_d435i parent="camera_mount" name="camera"
+                      use_nominal_extrinsics="true"
+                      use_mesh="$(arg use_mesh)">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:sensor_d435i>
+
+  <gazebo reference="camera_link">
+    <sensor name="rgbd_camera" type="rgbd_camera">
+      <camera>
+        <horizontal_fov>$(arg hfov)</horizontal_fov>
+        <image>
+          <width>$(arg width)</width>
+          <height>$(arg height)</height>
+        </image>
+        <clip>
+          <near>$(arg clip_near)</near>
+          <far>$(arg clip_far)</far>
+        </clip>
+      </camera>
+      <always_on>1</always_on>
+      <update_rate>$(arg fps)</update_rate>
+      <visualize>$(arg visualize)</visualize>
+      <topic>$(arg topic)</topic>
+    </sensor>
+  </gazebo>
+
+</robot>

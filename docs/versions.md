@@ -12,6 +12,8 @@
 | unitree_sdk2_python | 快照 | Desktop/unitree_sdk2_python-master.zip | third_party/，Python SDK |
 | unitree_ros (ROS1) | 快照 2026-08-28 | Desktop/unitree_ros-master.zip | 仅移植了 go2_description |
 | go2_description | 1.0.0 | 本仓库 | 仿真/模型/步态包 |
+| realsense2_description | apt (ros-humble) | /opt/ros/humble/share | D435i 模型/TF，vision_sim 使用 |
+| vision_sim | 0.1.0 | 本仓库 | 独立视觉仿真验证环境 |
 
 ## 上游仓库地址（供以后更新）
 
@@ -25,3 +27,7 @@
 - `unitree_ros2/setup.sh` 里网卡名是 `enp3s0`，本机有线网卡是 `enp4s0`，连真机时要改。
 - Go2 内部网段 192.168.123.x，PC 一般配 192.168.123.18。
 - 低层控制功能与 Go2 固件版本相关，EDU 在 App「设备信息」里查看。
+- vision_sim 无头启动时会出现 `libEGL warning: egl: failed to create dri2 screen`，
+  不影响相机出图/出深度（实测渲染正常）。
+- RealSense URDF 的光学系 frame 只在 `use_nominal_extrinsics:=true` 时生成，
+  vision_sim 的 xacro 已显式传该参数。

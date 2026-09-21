@@ -2,7 +2,8 @@
 import math
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
 
@@ -11,7 +12,12 @@ L2 = 0.213
 
 LEGS = ('FL', 'FR', 'RL', 'RR')
 PHASE = {'FL': 0.0, 'RR': 0.0, 'FR': 0.5, 'RL': 0.5}
-LEFT_LEGS = ('FL', 'RL')
+HIP_XY = {
+    'FL': (0.1934, 0.0465),
+    'FR': (0.1934, -0.0465),
+    'RL': (-0.1934, 0.0465),
+    'RR': (-0.1934, -0.0465),
+}
 SWING = 0.4
 
 
@@ -30,6 +36,10 @@ def yaw_from_quaternion(q):
                       1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
+def clamp(value, limit):
+    return max(-limit, min(limit, value))
+
+
 class Go2Trot(Node):
     def __init__(self):
         super().__init__('go2_trot')
@@ -37,28 +47,42 @@ class Go2Trot(Node):
         self.stride = self.declare_parameter('stride', 0.10).value
         self.lift = self.declare_parameter('lift', 0.05).value
         self.height = self.declare_parameter('stand_height', 0.275).value
-        self.steer_kp = self.declare_parameter('steer_kp', 0.8).value
+        self.steer_kp = self.declare_parameter('steer_kp', 1.0).value
         self.steer_kd = self.declare_parameter('steer_kd', 0.15).value
-        max_corr = self.declare_parameter('max_steer_correction', 0.5).value
+        self.vx_gain = self.declare_parameter('vx_gain', 1.6).value
+        self.vy_gain = self.declare_parameter('vy_gain', 1.6).value
+        self.max_step = self.declare_parameter('max_step', 0.18).value
+        self.max_vx = self.declare_parameter('max_vx', 0.6).value
+        self.max_vy = self.declare_parameter('max_vy', 0.3).value
+        self.max_wz = self.declare_parameter('max_wz', 1.0).value
+        self.cmd_timeout = self.declare_parameter('cmd_timeout', 0.5).value
         rate = self.declare_parameter('publish_rate', 100.0).value
 
-        self.max_corr = max_corr
         self.yaw = 0.0
         self.yaw_rate = 0.0
+        self.desired_yaw = 0.0
         self.have_pose = False
         self.last_yaw = None
         self.last_stamp = None
+        self.last_time = None
+        self.teleop = False
+        self.cmd = Twist()
+        self.cmd_stamp = None
 
         self.start = self.get_clock().now()
         self.pub = self.create_publisher(
             Float64MultiArray,
             '/joint_group_position_controller/commands', 10)
-        self.create_subscription(PoseStamped, '/model/go2/pose',
+        self.create_subscription(Odometry, '/model/go2/odometry',
                                  self._on_pose, 10)
+        self.create_subscription(Twist, '/cmd_vel', self._on_cmd, 10)
         self.timer = self.create_timer(1.0 / rate, self._on_timer)
 
+    def _now(self):
+        return self.get_clock().now().nanoseconds * 1e-9
+
     def _on_pose(self, msg):
-        yaw = yaw_from_quaternion(msg.pose.orientation)
+        yaw = yaw_from_quaternion(msg.pose.pose.orientation)
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         if self.last_yaw is not None and stamp > self.last_stamp:
             delta = yaw - self.last_yaw
@@ -71,36 +95,70 @@ class Go2Trot(Node):
             self.have_pose = True
         else:
             self.yaw = yaw
+            self.desired_yaw = yaw
         self.last_yaw = yaw
         self.last_stamp = stamp
 
-    def _steer(self):
-        if not self.have_pose:
-            return 0.0
-        corr = self.steer_kp * self.yaw + self.steer_kd * self.yaw_rate
-        return max(-self.max_corr, min(self.max_corr, corr))
+    def _on_cmd(self, msg):
+        self.cmd = msg
+        self.cmd_stamp = self._now()
+        self.teleop = True
 
-    def _foot(self, phase, stride):
+    def _velocity_command(self, now):
+        if not self.teleop:
+            return self.stride * self.frequency, 0.0, 0.0
+        if self.cmd_stamp is not None and now - self.cmd_stamp > self.cmd_timeout:
+            return 0.0, 0.0, 0.0
+        return (clamp(self.cmd.linear.x, self.max_vx),
+                clamp(self.cmd.linear.y, self.max_vy),
+                clamp(self.cmd.angular.z, self.max_wz))
+
+    def _stand(self):
+        thigh, calf = leg_ik(0.0, -self.height)
+        return [0.0, thigh, calf] * len(LEGS)
+
+    def _foot(self, phase, dx, dy):
         if phase < SWING:
             s = phase / SWING
-            return (-0.5 * stride + stride * s,
+            return (-0.5 * dx + dx * s,
+                    -0.5 * dy + dy * s,
                     -self.height + self.lift * math.sin(math.pi * s))
         s = (phase - SWING) / (1.0 - SWING)
-        return (0.5 * stride - stride * s, -self.height)
+        return (0.5 * dx - dx * s,
+                0.5 * dy - dy * s,
+                -self.height)
 
     def _on_timer(self):
+        now = self._now()
+        dt = 0.0 if self.last_time is None else max(0.0, now - self.last_time)
+        self.last_time = now
+        vx, vy, wz = self._velocity_command(now)
+        if abs(vx) < 1e-3 and abs(vy) < 1e-3 and abs(wz) < 1e-3:
+            if self.have_pose:
+                self.desired_yaw = self.yaw
+            self.pub.publish(Float64MultiArray(data=self._stand()))
+            return
+
+        self.desired_yaw += wz * dt
+        wz_eff = clamp(wz + self.steer_kp * (self.desired_yaw - self.yaw)
+                       + self.steer_kd * (wz - self.yaw_rate),
+                       self.max_wz + 0.5)
+        t_stance = (1.0 - SWING) / self.frequency
+        vx_eff = vx * self.vx_gain
+        vy_eff = vy * self.vy_gain
+
         t = (self.get_clock().now() - self.start).nanoseconds * 1e-9
-        corr = self._steer()
         command = []
         for leg in LEGS:
-            mult = (1.0 + corr) if leg in LEFT_LEGS else (1.0 - corr)
+            hx, hy = HIP_XY[leg]
+            dx = clamp((vx_eff - wz_eff * hy) * t_stance, self.max_step)
+            dy = clamp((vy_eff + wz_eff * hx) * t_stance, self.max_step)
             phase = (self.frequency * t + PHASE[leg]) % 1.0
-            x, z = self._foot(phase, self.stride * mult)
-            thigh, calf = leg_ik(x, z)
-            command.extend([0.0, thigh, calf])
-        msg = Float64MultiArray()
-        msg.data = command
-        self.pub.publish(msg)
+            x, y, z = self._foot(phase, dx, dy)
+            hip = math.atan2(y, -z)
+            thigh, calf = leg_ik(x, -math.hypot(y, z))
+            command.extend([hip, thigh, calf])
+        self.pub.publish(Float64MultiArray(data=command))
 
 
 def main():

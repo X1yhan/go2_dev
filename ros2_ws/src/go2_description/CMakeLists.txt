@@ -4,12 +4,12 @@ project(go2_description)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY config dae urdf xacro rviz launch
+  DIRECTORY config dae urdf xacro rviz launch worlds
   DESTINATION share/${PROJECT_NAME}
 )
 
 install(
-  PROGRAMS scripts/go2_trot.py
+  PROGRAMS scripts/go2_trot.py scripts/go2_teleop.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

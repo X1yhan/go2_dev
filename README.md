@@ -44,6 +44,7 @@ ros2 launch vision_sim vision_sim.launch.py              # D435i + 移动目标 
 ```
 
 VSCode 里也可以直接用 `.vscode/tasks.json` 里的任务（Ctrl+Shift+B / 任务面板）。
+完整启动方式（命令行 / VSCode 任务 / 全部 launch 参数）见 `docs/running.md`。
 
 ## 仿真实现说明
 
@@ -59,7 +60,8 @@ VSCode 里也可以直接用 `.vscode/tasks.json` 里的任务（Ctrl+Shift+B / 
 
 剥离四足本体、单独验证视觉链路：固定 D435i 相机 + 移动目标，跑通
 图像采集 → 运动目标检测 → 三维坐标解算，并与真值对比。
-详见 `ros2_ws/src/vision_sim/README.md`（首版实测：检测 0 漏检，3D 定位误差 mean≈1.2cm）。
+详见 `ros2_ws/src/vision_sim/README.md`（首版实测：检测 0 漏检，3D 定位误差 mean≈1.2cm）；
+进度与交接备忘见 `docs/status.md`。
 
 ## Roadmap
 

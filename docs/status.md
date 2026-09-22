@@ -19,6 +19,15 @@
 ### NVIDIA 驱动(2026-09-21)
 - 重启后已恢复正常:`nvidia-smi` 595.91.07,内核模块与用户态版本一致
 
+### 狗载视觉链路(2026-09-21)
+- 新包 `ros2_ws/src/go2_vision`:calib_check / ball_detector / target_localizer /
+  target_director / eval_monitor / stand_keeper(消息 TargetDetection、TargetObservation)
+- 融合定位:bbox 内雷达点 / 相机射线∩雷达地面(默认)/ 单目尺寸 三种方法 + alpha-beta 滤波
+- 实测(红球 r=0.15m,30Hz):静态 xy 0.2cm;正弦 0.5 与 1.0 m/s 均 rms 2.6cm、max ~5cm
+- 关键坑:算法节点必须加 `use_sim_time`;相机在画面底边裁切时地面法失效(已做单目兜底);
+  Gazebo 里狗不站姿时相机高度 0.45m 会让球出画(用 walk:=true auto_forward:=false 站定)
+- 清理脚本已扩展到视觉节点(重复节点会互相打架,出现假误差)
+
 ### 仿真狗遥控(2026-09-21)
 - 步态节点 `go2_trot.py` 订阅 `/cmd_vel`(收到指令前保持自动前进,零指令=站立);
   `go2_teleop.py` 键盘遥控(w/s 前后,a/d/q/e 转向,k 停,±调速)

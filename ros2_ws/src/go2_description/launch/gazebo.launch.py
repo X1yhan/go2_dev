@@ -9,6 +9,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 JOINTS = [
     'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
@@ -250,6 +251,9 @@ def generate_launch_description():
                               description='Spawn height of the Go2'),
         DeclareLaunchArgument('walk', default_value='false',
                               description='Start the open-loop trot gait node'),
+        DeclareLaunchArgument('auto_forward', default_value='true',
+                              description='Trot forward before the first '
+                                          '/cmd_vel (walk mode only)'),
         DeclareLaunchArgument('sensors', default_value='false',
                               description='Add the built-in front camera and '
                                           'LiDAR to the simulated Go2'),
@@ -280,7 +284,11 @@ def generate_launch_description():
             executable='parameter_bridge',
             arguments=['/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock',
                        '/model/go2/odometry@nav_msgs/msg/Odometry'
-                       '[ignition.msgs.Odometry'],
+                       '[ignition.msgs.Odometry',
+                       '/model/red_ball/odometry@nav_msgs/msg/Odometry'
+                       '[ignition.msgs.Odometry',
+                       ['/world/', gz_world_name,
+                        '/set_pose@ros_gz_interfaces/srv/SetEntityPose']],
             output='screen',
         ),
         sensor_bridge,
@@ -293,6 +301,8 @@ def generate_launch_description():
         Node(
             package='go2_description',
             executable='go2_trot.py',
+            parameters=[{'auto_forward': ParameterValue(
+                LaunchConfiguration('auto_forward'), value_type=bool)}],
             condition=IfCondition(walk),
             output='screen',
         ),

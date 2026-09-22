@@ -136,6 +136,30 @@ ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
 指令之前保持自动前进,收到后按指令走(零指令 = 站立)。当前开环小跑实测约
 0.13 m/s(前进)、0.5 rad/s(转向),横向平移不支持;位姿反馈来自
 `/model/go2/odometry`(Gazebo OdometryPublisher)。
+不想让它先自动走的话加 `auto_forward:=false`,步态节点会原地站住。
+
+### 狗载视觉链路(相机 + 雷达融合定位)
+
+```bash
+# 终端 A:仿真(相机+雷达),步态节点原地站立
+ros2 launch go2_description gazebo.launch.py sensors:=true walk:=true auto_forward:=false
+
+# 终端 B:运动目标 + 检测 + 融合定位 + 评估
+ros2 launch go2_vision vision_pipeline.launch.py trajectory:=sine speed:=0.5 amplitude:=0.5
+```
+
+- `target_director`:红球沿脚本轨迹运动(static|line|sine|circle),发真值 `/target/ground_truth`
+- `ball_detector`:HSV 红球检测 → `/target/detections`、调试图 `/target/debug_image`
+- `target_localizer`:融合定位(bbox 内雷达点 / 射线∩地面 + 半径 / 单目尺寸)→
+  `/target/position`(base 系)、`/target/position_world`(world 系),带 method/quality
+- `eval_monitor`:每 5s 打印与真值误差(含球的实际位姿 vs 指令轨迹两种口径)
+- `stand_keeper`:持续发零 `/cmd_vel`,让步态节点稳住站姿(视觉测试用)
+
+看调试画面:`ros2 run rqt_image_view rqt_image_view /target/debug_image`
+标定对齐检查:`ros2 run go2_vision calib_check.py`(打印残差并存 overlay 图)
+
+红球(r=0.15m)首测结果:静态 xy 0.2cm;正弦 0.5 m/s 与 1.0 m/s 均
+**rms 2.6cm / max ~5cm**,方法为 lidar_ground,30Hz 无丢失。
 
 ## 3. 视觉仿真(vision_sim)
 

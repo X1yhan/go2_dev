@@ -129,7 +129,7 @@ ign service -s /world/empty/create \
     </model>
 
     <!-- simple props so the front camera / LiDAR have something to see -->
-    <model name="red_box">
+    <model name="orange_box">
       <static>true</static>
       <pose>1.5 0.8 0.25 0 0 0.3</pose>
       <link name="link">
@@ -139,8 +139,40 @@ ign service -s /world/empty/create \
         <visual name="visual">
           <geometry><box><size>0.5 0.5 0.5</size></box></geometry>
           <material>
-            <ambient>0.8 0.1 0.1 1</ambient>
-            <diffuse>0.8 0.1 0.1 1</diffuse>
+            <ambient>0.9 0.5 0.1 1</ambient>
+            <diffuse>0.9 0.5 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- vision target: red ball, radius 0.15 m, driven by target_director -->
+    <model name="red_ball">
+      <pose>1.5 0 0.15 0 0 0</pose>
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+              name="ignition::gazebo::systems::OdometryPublisher">
+        <odom_frame>world</odom_frame>
+        <robot_base_frame>red_ball</robot_base_frame>
+        <dimensions>3</dimensions>
+        <odom_publish_frequency>30</odom_publish_frequency>
+      </plugin>
+      <link name="link">
+        <inertial>
+          <mass>0.05</mass>
+          <inertia>
+            <ixx>0.00045</ixx>
+            <iyy>0.00045</iyy>
+            <izz>0.00045</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><sphere><radius>0.15</radius></sphere></geometry>
+          <material>
+            <ambient>0.9 0.05 0.05 1</ambient>
+            <diffuse>0.9 0.05 0.05 1</diffuse>
           </material>
         </visual>
       </link>

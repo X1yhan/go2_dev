@@ -15,7 +15,8 @@ go2_dev/
 ├── ros2_ws/                  # colcon 工作空间
 │   └── src/
 │       ├── go2_description/  # Go2 模型/仿真/步态包
-│       └── vision_sim/       # 独立视觉仿真验证环境（D435i + 移动目标）
+│   ├── vision_sim/       # 独立视觉仿真验证环境（D435i + 移动目标）
+│   └── go2_vision/       # 狗载视觉：检测 + 相机/雷达融合定位 + 评估
 ├── third_party/              # 上游 SDK / 社区包（未纳入 git，见 docs/versions.md）
 │   ├── unitree_ros2/         # 官方 ROS2 接口（CycloneDDS + 消息 + 示例）
 │   ├── unitree_sdk2/         # C++ SDK（x86_64 + aarch64）
@@ -76,6 +77,7 @@ VSCode 里也可以直接用 `.vscode/tasks.json` 里的任务（Ctrl+Shift+B / 
 - [x] 开环 trot 行走 + 航向稳定
 - [x] 独立视觉仿真环境（检测 + 3D 定位 + 真值对比）
 - [x] 狗载传感器仿真（前视相机 + L1 雷达占位）
+- [x] 狗载视觉：红球检测 + 相机/雷达融合定位（运动目标 rms 2.6cm）
 - [ ] 步态提速 / 稳定性优化
 - [ ] 视觉伺服：远距导航 + 近距对准（仿真）
 - [ ] 真机：CycloneDDS + unitree_ros2 / unitree_sdk2_python

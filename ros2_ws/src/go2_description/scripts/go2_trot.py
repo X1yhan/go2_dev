@@ -56,6 +56,8 @@ class Go2Trot(Node):
         self.max_vy = self.declare_parameter('max_vy', 0.3).value
         self.max_wz = self.declare_parameter('max_wz', 1.0).value
         self.cmd_timeout = self.declare_parameter('cmd_timeout', 0.5).value
+        self.auto_forward = self.declare_parameter(
+            'auto_forward', True).value
         rate = self.declare_parameter('publish_rate', 100.0).value
 
         self.yaw = 0.0
@@ -106,6 +108,8 @@ class Go2Trot(Node):
 
     def _velocity_command(self, now):
         if not self.teleop:
+            if not self.auto_forward:
+                return 0.0, 0.0, 0.0
             return self.stride * self.frequency, 0.0, 0.0
         if self.cmd_stamp is not None and now - self.cmd_stamp > self.cmd_timeout:
             return 0.0, 0.0, 0.0

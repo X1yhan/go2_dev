@@ -114,23 +114,37 @@ RViz 里用 MotionPlanning 面板拖动末端目标 → Plan & Execute,机械臂
 **场景 6:简单抓取(仿真,MoveIt + 夹爪)**
 
 ```bash
-# 终端 A:仿真(狗 + 臂 + 简化夹爪)
+# 0) 清理残留(每次开跑前建议执行;会杀掉所有 Gazebo/ROS 仿真进程)
+~/go2_dev/scripts/kill_sim.sh --force
+
+# 终端 A:仿真(狗 + RM75 + D435i + AG95;物理用简化平行爪)
+cd ~/go2_dev && source scripts/setup_env.sh
 ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=false
 
-# 终端 B:MoveIt
+# 终端 B:MoveIt(等 A 起来后;依赖 ~/rm_ws 里的 RealMan SDK)
 source ~/rm_ws/install/setup.bash
 ros2 launch go2_description arm_moveit.launch.py
 
-# 终端 C:抓取演示
+# 终端 C:抓取演示(等 B 起来后)
 source ~/rm_ws/install/setup.bash
 ros2 run go2_description grasp_ball.py
 ```
 
 流程:臂回零 → 开爪 → MoveIt 到预抓取位 → 笛卡尔直线下探 → 夹爪闭合 →
 直线抬起 → 校验球被抬起(z 0.30 → 0.45)。
-说明:目标球是台面上的**绿色小球 `grasp_ball`(r=0.05,台面高 25cm)**;
-仿真物理用"简化平行爪"(真 AG95 的四连杆机构仅用于显示,物理复现在后续);
-红球 `red_ball`(r=0.15,地面)仍留给视觉链路。
+
+自检:
+```bash
+ros2 control list_controllers                # 4 个 active(腿/臂/夹爪/broadcaster)
+ign model --model go2 | grep "Name: Link"    # Link1~Link7 共 7 条
+```
+
+说明:
+- 目标球是台面上的**绿色小球 `grasp_ball`(r=0.05,台面高 25cm)**;
+  抓过一次后球不会自己回台面,**重跑前先重启终端 A**(或重启整个仿真)
+- 仿真物理用"简化平行爪"(真 AG95 的四连杆机构仅用于显示)
+- 红球 `red_ball`(r=0.15,地面)仍留给视觉链路
+- 环境:~/.bashrc 已指向 `~/go2_dev/ros2_ws/install`;RealMan SDK 在 `~/rm_ws`
 
 ### 命令与参数速查
 

@@ -108,8 +108,29 @@ ros2 launch go2_description arm_moveit.launch.py
 RViz 里用 MotionPlanning 面板拖动末端目标 → Plan & Execute,机械臂就会规划过去。
 已验证:目标点 (0.3, 0, 0.3)(base_link 系)可达,末端误差 ~2cm。
 控制器:`joint_group_position_controller`(12 腿)+ `rm_group_controller`
-(JointTrajectoryController,7 臂)+ joint_state_broadcaster。
+(JointTrajectoryController,7 臂)+ `gripper_controller` + joint_state_broadcaster。
 注意:MoveIt 目前按"臂的基座固定"规划,狗要站着;狗走动中的规划后续再做。
+
+**场景 6:简单抓取(仿真,MoveIt + 夹爪)**
+
+```bash
+# 终端 A:仿真(狗 + 臂 + 简化夹爪)
+ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=false
+
+# 终端 B:MoveIt
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+
+# 终端 C:抓取演示
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description grasp_ball.py
+```
+
+流程:臂回零 → 开爪 → MoveIt 到预抓取位 → 笛卡尔直线下探 → 夹爪闭合 →
+直线抬起 → 校验球被抬起(z 0.30 → 0.45)。
+说明:目标球是台面上的**绿色小球 `grasp_ball`(r=0.05,台面高 25cm)**;
+仿真物理用"简化平行爪"(真 AG95 的四连杆机构仅用于显示,物理复现在后续);
+红球 `red_ball`(r=0.15,地面)仍留给视觉链路。
 
 ### 命令与参数速查
 

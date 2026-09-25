@@ -30,7 +30,7 @@ def _add_fixed(root, joint_name, parent, child, xyz, rpy, add_link=False):
     ET.SubElement(joint, 'origin', {'xyz': xyz, 'rpy': rpy})
 
 
-def _gripper_children(urdf_path, share, package):
+def _gripper_children(urdf_path, share, package, fix_passive=False):
     root = ET.parse(urdf_path).getroot()
     drop_links = {'world', 'gripper_root_link'}
     drop_joints = {'world_fixed', 'ee_fixed_joint'}
@@ -43,8 +43,74 @@ def _gripper_children(urdf_path, share, package):
             continue
         if child.tag == 'joint' and child.get('name') in drop_joints:
             continue
+        if fix_passive and child.tag == 'joint' \
+                and child.get('type') == 'continuous':
+            child.set('type', 'fixed')
+            for tag in ('axis', 'limit'):
+                sub = child.find(tag)
+                if sub is not None:
+                    child.remove(sub)
         children.append(child)
     return children
+
+
+def _simple_gripper_children(base_len=0.10, finger_travel=0.10):
+    """简化二指平行爪(仿真物理用):两个 prismatic 指,接口与 AG95 一致."""
+    half = base_len / 2.0
+    return ET.fromstring((
+        '<robot>'
+        '  <link name="gripper_base_link">'
+        '    <inertial><origin xyz="0 0 0.015" rpy="0 0 0"/>'
+        '      <mass value="0.15"/>'
+        '      <inertia ixx="0.0002" ixy="0" ixz="0" iyy="0.0002" iyz="0" izz="0.0003"/>'
+        '    </inertial>'
+        '    <visual><origin xyz="0 0 0.015" rpy="0 0 0"/>'
+        '      <geometry><box size="0.09 0.09 0.03"/></geometry>'
+        '      <material name="grey"><color rgba="0.3 0.3 0.3 1"/></material>'
+        '    </visual>'
+        '    <collision><origin xyz="0 0 0.015" rpy="0 0 0"/>'
+        '      <geometry><box size="0.09 0.09 0.03"/></geometry>'
+        '    </collision>'
+        '  </link>'
+        f'  <joint name="gripper_finger1_joint" type="prismatic">'
+        f'    <parent link="gripper_base_link"/>'
+        f'    <child link="gripper_finger1_link"/>'
+        f'    <origin xyz="0 {half - 0.01:.3f} 0.06" rpy="0 0 0"/>'
+        '    <axis xyz="0 1 0"/>'
+        f'    <limit lower="0" upper="{finger_travel}" effort="50" velocity="0.2"/>'
+        '  </joint>'
+        f'  <joint name="gripper_finger2_joint" type="prismatic">'
+        f'    <parent link="gripper_base_link"/>'
+        f'    <child link="gripper_finger2_link"/>'
+        f'    <origin xyz="0 {-half + 0.01:.3f} 0.06" rpy="0 0 0"/>'
+        '    <axis xyz="0 -1 0"/>'
+        f'    <limit lower="0" upper="{finger_travel}" effort="50" velocity="0.2"/>'
+        '  </joint>'
+        '  <link name="gripper_finger1_link">'
+        '    <inertial><mass value="0.05"/>'
+        '      <inertia ixx="2e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="1e-05"/>'
+        '    </inertial>'
+        '    <visual><origin xyz="0 0 -0.03" rpy="0 0 0"/>'
+        '      <geometry><box size="0.05 0.012 0.07"/></geometry>'
+        '      <material name="dark"><color rgba="0.1 0.1 0.1 1"/></material>'
+        '    </visual>'
+        '    <collision><origin xyz="0 0 -0.03" rpy="0 0 0"/>'
+        '      <geometry><box size="0.05 0.012 0.07"/></geometry>'
+        '    </collision>'
+        '  </link>'
+        '  <link name="gripper_finger2_link">'
+        '    <inertial><mass value="0.05"/>'
+        '      <inertia ixx="2e-05" ixy="0" ixz="0" iyy="2e-05" iyz="0" izz="1e-05"/>'
+        '    </inertial>'
+        '    <visual><origin xyz="0 0 -0.03" rpy="0 0 0"/>'
+        '      <geometry><box size="0.05 0.012 0.07"/></geometry>'
+        '      <material name="dark"><color rgba="0.1 0.1 0.1 1"/></material>'
+        '    </visual>'
+        '    <collision><origin xyz="0 0 -0.03" rpy="0 0 0"/>'
+        '      <geometry><box size="0.05 0.012 0.07"/></geometry>'
+        '    </collision>'
+        '  </link>'
+        '</robot>'))
 
 
 def _realsense_children(model, parent, share):
@@ -86,7 +152,8 @@ def build(go2_urdf, arm_urdf, go2_share, arm_share,
           camera='none', camera_xyz=DEFAULT_CAMERA_XYZ,
           camera_rpy=DEFAULT_CAMERA_RPY, realsense_share='',
           gripper='none', gripper_xyz='0 0 0',
-          gripper_rpy='0 -1.5708 0', gripper_share=''):
+          gripper_rpy='0 -1.5708 0', gripper_share='',
+          gripper_fix_passive=False, gripper_simple=False):
     go2 = ET.parse(go2_urdf).getroot()
     arm = ET.parse(arm_urdf).getroot()
 
@@ -115,7 +182,16 @@ def build(go2_urdf, arm_urdf, go2_share, arm_share,
             go2.append(child)
 
     # two-finger gripper on the flange
-    if gripper != 'none':
+    if gripper != 'none' and gripper_simple:
+        _add_fixed(go2, 'tool0_gripper_joint', 'tool0', 'gripper_base_link',
+                   '0 0 0.02', '0 0 0')
+        for child in list(_simple_gripper_children()):
+            go2.append(child)
+        for link in ('gripper_finger1_link', 'gripper_finger2_link'):
+            gz = ET.SubElement(go2, 'gazebo', {'reference': link})
+            ET.SubElement(gz, 'mu1').text = '5.0'
+            ET.SubElement(gz, 'mu2').text = '5.0'
+    elif gripper != 'none':
         if not gripper_share:
             raise RuntimeError('gripper=%s needs --gripper-share' % gripper)
         package = 'dh_robotics_%s_description' % gripper
@@ -123,7 +199,8 @@ def build(go2_urdf, arm_urdf, go2_share, arm_share,
                                  'dh_robotics_%s.urdf' % gripper)
         _add_fixed(go2, 'tool0_gripper_joint', 'tool0', 'ee_link',
                    gripper_xyz, gripper_rpy)
-        for child in _gripper_children(urdf_path, gripper_share, package):
+        for child in _gripper_children(urdf_path, gripper_share, package,
+                                       gripper_fix_passive):
             go2.append(child)
 
     _rewrite_meshes(go2, 'go2_description', go2_share)
@@ -158,6 +235,10 @@ def main():
     parser.add_argument('--gripper-xyz', default='0 0 0')
     parser.add_argument('--gripper-rpy', default='0 -1.5708 0')
     parser.add_argument('--gripper-share', default='')
+    parser.add_argument('--gripper-fix-passive', action='store_true',
+                        help='把夹爪随动连杆关节固定(仿真用)')
+    parser.add_argument('--gripper-simple', action='store_true',
+                        help='用简化平行爪替代真实机构(仿真物理用)')
     parser.add_argument('--out')
     args = parser.parse_args()
 
@@ -165,7 +246,8 @@ def main():
                  args.arm_share, args.plate_xyz, args.arm_xyz, args.arm_rpy,
                  args.tool_xyz, args.tool_rpy, args.camera, args.camera_xyz,
                  args.camera_rpy, args.realsense_share, args.gripper,
-                 args.gripper_xyz, args.gripper_rpy, args.gripper_share)
+                 args.gripper_xyz, args.gripper_rpy, args.gripper_share,
+                 args.gripper_fix_passive, args.gripper_simple)
     if args.out:
         with open(args.out, 'w') as handle:
             handle.write(urdf)

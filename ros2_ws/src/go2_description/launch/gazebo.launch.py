@@ -9,7 +9,7 @@ from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             OpaqueFunction, RegisterEventHandler)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -119,10 +119,10 @@ def _sensor_xml(lidar_xyz):
 
 
 def _gz_robot_description(urdf, pkg_share, sensors=False, arm=False,
-                          lidar_xyz=LIDAR_MOUNT_XYZ):
+                          lidar_xyz=LIDAR_MOUNT_XYZ, gripper_joints=None):
     urdf = urdf.replace('package://go2_description/', 'file://' + pkg_share + '/')
 
-    joints = JOINTS + (ARM_JOINTS if arm else [])
+    joints = JOINTS + (ARM_JOINTS if arm else []) + list(gripper_joints or [])
     controller_yaml = 'go2_arm_controllers.yaml' if arm else 'go2_controllers.yaml'
 
     ros2_control = [
@@ -200,6 +200,7 @@ def generate_launch_description():
         with open(os.path.join(pkg_share, 'urdf',
                                'go2_description.urdf')) as handle:
             urdf = handle.read()
+        gripper_joints = []
         if arm_on:
             def _arg(name):
                 return context.perform_substitution(LaunchConfiguration(name))
@@ -235,12 +236,16 @@ def generate_launch_description():
             gripper_share = _arg('gripper_share')
             if gripper_share:
                 command += ['--gripper-share', gripper_share]
+            if _arg('gripper') != 'none':
+                command += ['--gripper-simple']
+                gripper_joints = ['gripper_finger1_joint',
+                                  'gripper_finger2_joint']
             result = subprocess.run(command, capture_output=True, text=True,
                                     check=True)
             urdf = result.stdout
         robot_description = _gz_robot_description(
             urdf, pkg_share, sensors=enabled, arm=arm_on,
-            lidar_xyz=lidar_xyz)
+            lidar_xyz=lidar_xyz, gripper_joints=gripper_joints)
         return [
             Node(
                 package='robot_state_publisher',
@@ -278,6 +283,16 @@ def generate_launch_description():
         arguments=['rm_group_controller',
                    '--controller-manager-timeout', '60'],
         condition=IfCondition(arm),
+        output='screen',
+    )
+    spawner_gripper = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['gripper_controller',
+                   '--controller-manager-timeout', '60'],
+        condition=IfCondition(PythonExpression([
+            "'", arm, "'.lower() in ('1','true','yes','on') and '",
+            LaunchConfiguration('gripper'), "' != 'none'"])),
         output='screen',
     )
 
@@ -401,6 +416,8 @@ def generate_launch_description():
                        '[ignition.msgs.Odometry',
                        '/model/red_ball/odometry@nav_msgs/msg/Odometry'
                        '[ignition.msgs.Odometry',
+                       '/model/grasp_ball/odometry@nav_msgs/msg/Odometry'
+                       '[ignition.msgs.Odometry',
                        ['/world/', gz_world_name,
                         '/set_pose@ros_gz_interfaces/srv/SetEntityPose']],
             output='screen',
@@ -415,6 +432,10 @@ def generate_launch_description():
         RegisterEventHandler(
             OnProcessExit(target_action=spawner_jgpc,
                           on_exit=[spawner_arm]),
+        ),
+        RegisterEventHandler(
+            OnProcessExit(target_action=spawner_arm,
+                          on_exit=[spawner_gripper]),
         ),
         Node(
             package='go2_description',

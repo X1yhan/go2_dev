@@ -178,6 +178,52 @@ ign service -s /world/empty/create \
       </link>
     </model>
 
+    <!-- pedestal for the grasping demo -->
+    <model name="pedestal">
+      <static>true</static>
+      <pose>0.35 0.25 0.125 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.3 0.3 0.25</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.3 0.3 0.25</size></box></geometry>
+          <material>
+            <ambient>0.4 0.4 0.45 1</ambient>
+            <diffuse>0.4 0.4 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- grasp target: small green ball on the pedestal -->
+    <model name="grasp_ball">
+      <pose>0.35 0.25 0.30 0 0 0</pose>
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+              name="ignition::gazebo::systems::OdometryPublisher">
+        <odom_frame>world</odom_frame>
+        <robot_base_frame>grasp_ball</robot_base_frame>
+        <dimensions>3</dimensions>
+        <odom_publish_frequency>30</odom_publish_frequency>
+      </plugin>
+      <link name="link">
+        <inertial>
+          <mass>0.03</mass>
+          <inertia><ixx>3e-05</ixx><iyy>3e-05</iyy><izz>3e-05</izz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><sphere><radius>0.05</radius></sphere></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><sphere><radius>0.05</radius></sphere></geometry>
+          <material>
+            <ambient>0.1 0.8 0.2 1</ambient>
+            <diffuse>0.1 0.8 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <model name="blue_cylinder">
       <static>true</static>
       <pose>1.5 -0.8 0.3 0 0 0</pose>

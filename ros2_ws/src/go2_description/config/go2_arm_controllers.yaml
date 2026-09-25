@@ -11,9 +11,12 @@ controller_manager:
     rm_group_controller:
       type: joint_trajectory_controller/JointTrajectoryController
 
+    gripper_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
 gz_ros2_control:
   ros__parameters:
-    position_proportional_gain: 10.0
+    position_proportional_gain: 50.0
 
 joint_group_position_controller:
   ros__parameters:
@@ -41,6 +44,19 @@ rm_group_controller:
       - joint5
       - joint6
       - joint7
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    constraints:
+      goal_time: 1.0
+
+gripper_controller:
+  ros__parameters:
+    joints:
+      - gripper_finger1_joint
+      - gripper_finger2_joint
     command_interfaces:
       - position
     state_interfaces:

@@ -39,8 +39,13 @@
   (`world/gripper_root_link`);实物控制走串口 Modbus(包内是 ROS1 驱动,ROS2 待做)
 - 全装配模型:`Go2 + RM75 + D435i + AG95` = 77 links / 76 joints,TF 已验证
   (爪尖沿工具轴伸出法兰 ~0.14m)
+- **简单抓取已通**(2026-09-25):`grasp_ball.py`(回零→开爪→预抓取→笛卡尔下探→
+  闭合→直线抬起),小球 grasp_ball(r=0.05,25cm 台面)从 z=0.30 抬到 0.45 验证成功
+  - 仿真物理用简化平行爪(真 AG95 四连杆只显示);`gripper_controller` JTC 驱动两指
+  - 坑:遥操作只改位置不清速度(球会被带飞);被抓目标与臂的起始姿态要分开;
+    "工具朝下"的 IK 可达带有限(法兰 z 大致 -0.05~0.2),目标高度/台面按此设计
 - 待办:狗走动中的臂规划(移动基座)、Gazebo 里给臂端相机加 rgbd sensor + 桥接、
-  eye-in-hand 手眼标定、夹爪装到 tool0、视觉伺服接 go2_vision
+  eye-in-hand 手眼标定、真实 AG95 机构(四连杆 mimic)物理复现、视觉伺服接 go2_vision
 
 ### 狗载视觉链路(2026-09-21)
 - 新包 `ros2_ws/src/go2_vision`:calib_check / ball_detector / target_localizer /

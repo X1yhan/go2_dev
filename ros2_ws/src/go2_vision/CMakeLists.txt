@@ -20,6 +20,7 @@ install(
     scripts/target_director.py
     scripts/eval_monitor.py
     scripts/stand_keeper.py
+    scripts/visual_servo.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

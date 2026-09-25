@@ -22,12 +22,7 @@ PATTERNS=(
     "go2_teleop.py"
     "rviz2"
     "controller_manager"
-    "target_director.py"
-    "ball_detector.py"
-    "target_localizer.py"
-    "eval_monitor.py"
-    "stand_keeper.py"
-    "calib_check.py"
+    "go2_vision"
 )
 
 kill_matching() {

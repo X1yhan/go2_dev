@@ -66,6 +66,11 @@ class TargetDirector(Node):
             p = (t % period) / period
             tri = 4.0 * abs(p - 0.5) - 1.0
             return cx, cy + self.amplitude * tri
+        if self.trajectory == 'range':
+            period = 2.0 * self.amplitude / self.speed
+            p = (t % period) / period
+            tri = 4.0 * abs(p - 0.5) - 1.0
+            return cx + self.amplitude * tri, cy
         if self.trajectory == 'sine':
             period = 2.0 * math.pi * self.amplitude / self.speed
             return cx, cy + self.amplitude * math.sin(2.0 * math.pi * t / period)

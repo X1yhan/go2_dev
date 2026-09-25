@@ -11,6 +11,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     use_eval = LaunchConfiguration('eval')
     use_hold = LaunchConfiguration('hold')
+    use_servo = LaunchConfiguration('servo')
     trajectory = LaunchConfiguration('trajectory')
     speed = LaunchConfiguration('speed')
     amplitude = LaunchConfiguration('amplitude')
@@ -60,6 +61,13 @@ def generate_launch_description():
         condition=IfCondition(use_hold),
         output='screen',
     )
+    servo = Node(
+        package='go2_vision',
+        executable='visual_servo.py',
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(use_servo),
+        output='screen',
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('trajectory', default_value='sine',
@@ -74,9 +82,12 @@ def generate_launch_description():
         DeclareLaunchArgument('eval', default_value='true'),
         DeclareLaunchArgument('hold', default_value='true',
                               description='Keep the gait node standing'),
+        DeclareLaunchArgument('servo', default_value='false',
+                              description='Start the visual servo (follow-me)'),
         director,
         detector,
         localizer,
         eval_monitor,
         stand_keeper,
+        servo,
     ])

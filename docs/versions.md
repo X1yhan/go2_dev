@@ -12,6 +12,9 @@
 | unitree_sdk2_python | 快照 | Desktop/unitree_sdk2_python-master.zip | third_party/，Python SDK |
 | unitree_ros (ROS1) | 快照 2026-08-28 | Desktop/unitree_ros-master.zip | third_party/unitree_ros/，仅提取 robots/go2_description |
 | go2_ros2_sdk | master 快照 2026-07-14 | Desktop/go2_ros2_sdk-master.zip | third_party/，社区 WebRTC ROS2 桥（相机/点云/scan/nav2） |
+| ros2_rm_robot | humble v1.7.0 (控制器 1.7.3) | Desktop/ros2_rm_robot (GitHub RealManRobot) | third_party/，RealMan 机械臂 ROS2 SDK（URDF/Gazebo/MoveIt2/driver，含 RM75） |
+| realsense-ros | 4.58.4 (ros2-master) | Desktop/realsense-ros (GitHub IntelRealSense) | third_party/，D435i 驱动 + 描述包（模型用 apt 的 realsense2_description，驱动留给真机） |
+| dh_gripper_ros | ROS1 catkin 快照 | Desktop/dh_gripper_ros | third_party/，大寰夹爪（AG95/AG145/PGC140/DH3 URDF + 串口驱动/消息，实物 AG95） |
 | aioice (patched) | go2 分支快照 2026-09-21 | github.com/legion1581/aioice | third_party/go2_ros2_sdk/go2_robot_sdk/external_lib/，GitHub zip 不含子模块，已单独补全 |
 | go2_description | 1.0.0 | 本仓库 | 仿真/模型/步态包 |
 | realsense2_description | apt (ros-humble) | /opt/ros/humble/share | D435i 模型/TF，vision_sim 使用 |

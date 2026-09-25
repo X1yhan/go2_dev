@@ -22,7 +22,8 @@ go2_dev/
 │   ├── unitree_sdk2/         # C++ SDK（x86_64 + aarch64）
 │   ├── unitree_sdk2_python/  # Python SDK
 │   ├── unitree_ros/          # ROS1 描述包（仅 go2_description）
-│   └── go2_ros2_sdk/         # 社区 WebRTC ROS2 桥（相机/点云/scan）
+│   ├── go2_ros2_sdk/         # 社区 WebRTC ROS2 桥（相机/点云/scan）
+│   └── ros2_rm_robot/        # RealMan 机械臂 ROS2 SDK（RM75 URDF/Gazebo/MoveIt2）
 ├── docs/                     # 文档与笔记
 ├── scripts/                  # 环境脚本
 └── .vscode/                  # VSCode 任务

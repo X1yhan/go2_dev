@@ -76,6 +76,41 @@ Gazebo 在后台算物理,画面全由 RViz 提供;遥控同上(另开终端)。
 ros2 launch go2_description display.launch.py     # RViz + 关节滑块
 ```
 
+**场景 4:背上装 RM75 机械臂(URDF 拼接,纯显示)**
+
+```bash
+ros2 launch go2_description display_arm.launch.py                 # RViz + 关节滑块
+ros2 launch go2_description display_arm.launch.py arm_variant:=rm_75_6f
+```
+
+- 挂点用官方载荷位 `load_link`(躯干顶面,`plate_xyz` 默认 `0 0 0.065`),
+  机械臂 `base_link` 经 `arm_mount_joint` 固定其上;可用 `arm_xyz/arm_rpy` 微调
+- 拼接工具:`scripts/build_arm_model.py`(合并两份 URDF + 重写 `file://` 网格路径)
+- 机械臂 URDF 变体:`rm_75`(默认)/`rm_75_6f`(六维力)/`rm_75_6fb`
+- 依赖 `third_party/ros2_rm_robot`;换路径用 `arm_root:=...` 或环境变量 `RM_ROBOT_ROOT`
+- **末端默认全装**:D435i(`camera:=d435i`,旁挂 `camera_xyz/rpy`)+ AG95 二指爪
+  (`gripper:=ag95`,法兰 `tool0`,`gripper_rpy` 默认 `0 -1.5708 0`);不装用 `camera:=none`/`gripper:=none`
+
+**场景 5:狗在 Gazebo 里 + 机械臂受控 + MoveIt 规划(去指定点)**
+
+```bash
+# 一次性:编译 RealMan SDK(独立工作空间,见 third_party/ros2_rm_robot/README_CN.md)
+#   mkdir -p ~/rm_ws/src && cp -r ... && colcon build
+
+# 终端 A:仿真(狗站住 + 机械臂),19 个关节一套 controller_manager
+ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=false
+
+# 终端 B:MoveIt2 + RViz
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+```
+
+RViz 里用 MotionPlanning 面板拖动末端目标 → Plan & Execute,机械臂就会规划过去。
+已验证:目标点 (0.3, 0, 0.3)(base_link 系)可达,末端误差 ~2cm。
+控制器:`joint_group_position_controller`(12 腿)+ `rm_group_controller`
+(JointTrajectoryController,7 臂)+ joint_state_broadcaster。
+注意:MoveIt 目前按"臂的基座固定"规划,狗要站着;狗走动中的规划后续再做。
+
 ### 命令与参数速查
 
 | 命令 | 说明 |
@@ -160,6 +195,24 @@ ros2 launch go2_vision vision_pipeline.launch.py trajectory:=sine speed:=0.5 amp
 
 红球(r=0.15m)首测结果:静态 xy 0.2cm;正弦 0.5 m/s 与 1.0 m/s 均
 **rms 2.6cm / max ~5cm**,方法为 lidar_ground,30Hz 无丢失。
+
+### 视觉伺服跟随(follow-me)
+
+```bash
+# 终端 A:仿真(相机+雷达),步态节点原地待命
+ros2 launch go2_description gazebo.launch.py sensors:=true walk:=true auto_forward:=false
+
+# 终端 B:球在 2.0~3.5m 往返移动,狗保持 ~1.2m 跟随(边看边修正)
+ros2 launch go2_vision vision_pipeline.launch.py \
+    trajectory:=range speed:=0.1 amplitude:=0.75 center_x:=2.75 servo:=true
+```
+
+- 控制律:方位误差 → 转向;距离误差 → 前进/后退;目标被裁切时退化为纯方位(只转不走),
+  丢失超时 → 倒退/原地搜索
+- 实测:方位误差 0~3.5°(目标始终居中)、距离 rms 0.21m、狗行进 ~15m
+- 参数:`d_dock`(1.2)、`kp_yaw`(1.2)、`kp_dist`(0.6)、`vx_max`(0.3 指令 ≈ 0.13 m/s 实际)、
+  `wz_max`(0.8 指令 ≈ 0.5 rad/s 实际)
+- 注意:伺服和键盘遥控别同时开(都在发 `/cmd_vel`)
 
 ## 3. 视觉仿真(vision_sim)
 

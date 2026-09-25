@@ -33,6 +33,24 @@
       "problemMatcher": []
     },
     {
+      "label": "Gazebo: 狗+机械臂",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=false",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MoveIt: 狗背机械臂",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && source ~/rm_ws/install/setup.bash && ros2 launch go2_description arm_moveit.launch.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "键盘遥控 (需先开 Gazebo: 走路)",
       "type": "shell",
       "command": "source scripts/setup_env.sh && ros2 run go2_description go2_teleop.py",

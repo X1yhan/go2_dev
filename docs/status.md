@@ -19,6 +19,29 @@
 ### NVIDIA 驱动(2026-09-21)
 - 重启后已恢复正常:`nvidia-smi` 595.91.07,内核模块与用户态版本一致
 
+### RM75 机械臂上狗背(URDF 拼接,2026-09-25)
+- `third_party/ros2_rm_robot`(RealMan 官方 humble v1.7.0,含 RM75 URDF/Gazebo/MoveIt2/driver)
+- 合并工具 `scripts/build_arm_model.py`;显示 launch `display_arm.launch.py`(RViz+关节滑块)
+- 挂载:`base → load_link`(官方载荷位,躯干顶面 z=0.065)→ `arm_mount_joint` → 机械臂 base_link;
+  零位 Link7 在 base 上方 0.915m;可选 `rm_75_6f/rm_75_6fb`
+- **控制已打通**:`gazebo.launch.py arm:=true` → 19 关节一套 controller_manager
+  (腿 `joint_group_position_controller` + 臂 `rm_group_controller` JTC);
+  狗原地站稳,臂 JTC 指令误差 0.000 rad
+- **MoveIt2 已通**:`arm_moveit.launch.py`(move_group 带 `use_sim_time`);MoveGroup
+  目标点 (0.3,0,0.3) base_link 系,规划+执行成功(error_code=1),末端误差 ~2cm
+- 关键坑:move_group 必须 `use_sim_time:=true`,否则状态被判过期→CONTROL_FAILED
+- **末端装载**:`Link7` 上加 `tool0`(法兰帧,留给夹爪)和 `camera_mount_link`(旁侧支架,
+  默认 Link7 系 `(0, 0.06, -0.02)` rpy `(0,-90°,0)`),再挂 apt 的 realsense2_description
+  D435i 模型(完整光学系/IMU 系);支持 `camera:=none|d435i|...`、`camera_xyz/rpy` 调安装位
+- realsense-ros 4.58.4 已归档 `third_party/`(真机驱动用)
+- **夹爪 AG95(大寰二指)**:`third_party/dh_gripper_ros`;合并工具挂到 `tool0`
+  (`gripper:=ag95` 默认,`gripper_rpy` 默认 `0 -90° 0`),URDF 里剔除显示假根
+  (`world/gripper_root_link`);实物控制走串口 Modbus(包内是 ROS1 驱动,ROS2 待做)
+- 全装配模型:`Go2 + RM75 + D435i + AG95` = 77 links / 76 joints,TF 已验证
+  (爪尖沿工具轴伸出法兰 ~0.14m)
+- 待办:狗走动中的臂规划(移动基座)、Gazebo 里给臂端相机加 rgbd sensor + 桥接、
+  eye-in-hand 手眼标定、夹爪装到 tool0、视觉伺服接 go2_vision
+
 ### 狗载视觉链路(2026-09-21)
 - 新包 `ros2_ws/src/go2_vision`:calib_check / ball_detector / target_localizer /
   target_director / eval_monitor / stand_keeper(消息 TargetDetection、TargetObservation)

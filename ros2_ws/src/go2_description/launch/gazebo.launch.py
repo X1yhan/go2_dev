@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 
 from ament_index_python.packages import (get_package_prefix,
                                          get_package_share_directory)
@@ -17,6 +19,30 @@ JOINTS = [
     'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
     'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint',
 ]
+
+ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4',
+              'joint5', 'joint6', 'joint7']
+ARM_DEFAULT_VARIANT = 'rm_75'
+DEFAULT_CAMERA = 'd435i'
+DEFAULT_GRIPPER = 'ag95'
+
+
+def _realsense_share_default():
+    try:
+        return get_package_share_directory('realsense2_description')
+    except Exception:
+        return ''
+
+
+def _gripper_share_default():
+    repo_root = os.path.abspath(os.path.join(
+        get_package_share_directory('go2_description'),
+        '..', '..', '..', '..', '..'))
+    return os.environ.get(
+        'DH_GRIPPER_SHARE',
+        os.path.join(repo_root, 'third_party', 'dh_gripper_ros',
+                     'dh_robotics_ag95_gripper',
+                     'dh_robotics_ag95_description'))
 
 # Go2 built-in sensors (simulated).
 # Camera: specs derived from the community front_camera_720 calibration
@@ -92,17 +118,18 @@ def _sensor_xml(lidar_xyz):
         '</gazebo>')
 
 
-def _gz_robot_description(pkg_share, sensors=False,
+def _gz_robot_description(urdf, pkg_share, sensors=False, arm=False,
                           lidar_xyz=LIDAR_MOUNT_XYZ):
-    with open(os.path.join(pkg_share, 'urdf', 'go2_description.urdf')) as f:
-        urdf = f.read()
     urdf = urdf.replace('package://go2_description/', 'file://' + pkg_share + '/')
+
+    joints = JOINTS + (ARM_JOINTS if arm else [])
+    controller_yaml = 'go2_arm_controllers.yaml' if arm else 'go2_controllers.yaml'
 
     ros2_control = [
         '<ros2_control name="Go2GazeboSystem" type="system">',
         '<hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>',
     ]
-    for joint in JOINTS:
+    for joint in joints:
         ros2_control.append(
             f'<joint name="{joint}">'
             '<command_interface name="position"/>'
@@ -115,7 +142,7 @@ def _gz_robot_description(pkg_share, sensors=False,
         '<gazebo><plugin filename="libgz_ros2_control-system.so" '
         'name="gz_ros2_control::GazeboSimROS2ControlPlugin">'
         '<parameters>'
-        + os.path.join(pkg_share, 'config', 'go2_controllers.yaml')
+        + os.path.join(pkg_share, 'config', controller_yaml)
         + '</parameters>'
         '<controller_manager_name>controller_manager</controller_manager_name>'
         '</plugin></gazebo>')
@@ -152,6 +179,7 @@ def generate_launch_description():
     sensors = LaunchConfiguration('sensors')
     rviz = LaunchConfiguration('rviz')
     gz_world_name = LaunchConfiguration('gz_world_name')
+    arm = LaunchConfiguration('arm')
 
     gz_plugin_path = os.path.join(get_package_prefix('gz_ros2_control'), 'lib')
     gz_env = {
@@ -159,14 +187,60 @@ def generate_launch_description():
         'GZ_SIM_SYSTEM_PLUGIN_PATH': gz_plugin_path,
     }
 
+    def _truthy(context, name):
+        return context.perform_substitution(
+            LaunchConfiguration(name)).lower() in ('1', 'true', 'yes', 'on')
+
     def _robot_nodes(context):
-        enabled = context.perform_substitution(sensors).lower() in (
-            '1', 'true', 'yes', 'on')
+        enabled = _truthy(context, 'sensors')
+        arm_on = _truthy(context, 'arm')
         lidar_xyz = ' '.join(
             context.perform_substitution(LaunchConfiguration(axis))
             for axis in ('lidar_x', 'lidar_y', 'lidar_z'))
+        with open(os.path.join(pkg_share, 'urdf',
+                               'go2_description.urdf')) as handle:
+            urdf = handle.read()
+        if arm_on:
+            def _arg(name):
+                return context.perform_substitution(LaunchConfiguration(name))
+
+            arm_root = _arg('arm_root')
+            variant = _arg('arm_variant')
+            builder = os.path.join(
+                get_package_prefix('go2_description'), 'lib',
+                'go2_description', 'build_arm_model.py')
+            command = [
+                sys.executable, builder,
+                '--go2-urdf', os.path.join(pkg_share, 'urdf',
+                                           'go2_description.urdf'),
+                '--arm-urdf', os.path.join(arm_root, 'rm_description', 'urdf',
+                                           variant + '.urdf'),
+                '--go2-share', pkg_share,
+                '--arm-share', os.path.join(arm_root, 'rm_description'),
+                '--plate-xyz', _arg('plate_xyz'),
+                '--arm-xyz', _arg('arm_xyz'),
+                '--arm-rpy', _arg('arm_rpy'),
+                '--tool-xyz', _arg('tool_xyz'),
+                '--tool-rpy', _arg('tool_rpy'),
+                '--camera', _arg('camera'),
+                '--camera-xyz', _arg('camera_xyz'),
+                '--camera-rpy', _arg('camera_rpy'),
+                '--gripper', _arg('gripper'),
+                '--gripper-xyz', _arg('gripper_xyz'),
+                '--gripper-rpy', _arg('gripper_rpy'),
+            ]
+            realsense_share = _arg('realsense_share')
+            if realsense_share:
+                command += ['--realsense-share', realsense_share]
+            gripper_share = _arg('gripper_share')
+            if gripper_share:
+                command += ['--gripper-share', gripper_share]
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    check=True)
+            urdf = result.stdout
         robot_description = _gz_robot_description(
-            pkg_share, sensors=enabled, lidar_xyz=lidar_xyz)
+            urdf, pkg_share, sensors=enabled, arm=arm_on,
+            lidar_xyz=lidar_xyz)
         return [
             Node(
                 package='robot_state_publisher',
@@ -196,6 +270,14 @@ def generate_launch_description():
         executable='spawner',
         arguments=['joint_group_position_controller',
                    '--controller-manager-timeout', '60'],
+        output='screen',
+    )
+    spawner_arm = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['rm_group_controller',
+                   '--controller-manager-timeout', '60'],
+        condition=IfCondition(arm),
         output='screen',
     )
 
@@ -266,6 +348,38 @@ def generate_launch_description():
                               description='LiDAR mount y in base frame'),
         DeclareLaunchArgument('lidar_z', default_value='0.10',
                               description='LiDAR mount z in base frame'),
+        DeclareLaunchArgument('arm', default_value='false',
+                              description='Mount the RM75 arm on the back'),
+        DeclareLaunchArgument(
+            'arm_root',
+            default_value=os.environ.get(
+                'RM_ROBOT_ROOT',
+                os.path.join(os.path.abspath(os.path.join(
+                    pkg_share, '..', '..', '..', '..', '..')),
+                    'third_party', 'ros2_rm_robot')),
+            description='ros2_rm_robot repo path'),
+        DeclareLaunchArgument('arm_variant', default_value=ARM_DEFAULT_VARIANT,
+                              description='rm_75 | rm_75_6f | rm_75_6fb'),
+        DeclareLaunchArgument('plate_xyz', default_value='0 0 0.065',
+                              description='Payload plate position in base'),
+        DeclareLaunchArgument('arm_xyz', default_value='0 0 0'),
+        DeclareLaunchArgument('arm_rpy', default_value='0 0 0'),
+        DeclareLaunchArgument('tool_xyz', default_value='0 0 0',
+                              description='gripper flange frame tool0'),
+        DeclareLaunchArgument('tool_rpy', default_value='0 0 0'),
+        DeclareLaunchArgument('camera', default_value=DEFAULT_CAMERA,
+                              description='none | d435i | d435 | d415 ...'),
+        DeclareLaunchArgument('camera_xyz', default_value='0 0.06 -0.02',
+                              description='camera bracket in Link7 frame'),
+        DeclareLaunchArgument('camera_rpy', default_value='0 -1.5708 0'),
+        DeclareLaunchArgument('realsense_share',
+                              default_value=_realsense_share_default()),
+        DeclareLaunchArgument('gripper', default_value=DEFAULT_GRIPPER,
+                              description='none | ag95 | ag145'),
+        DeclareLaunchArgument('gripper_xyz', default_value='0 0 0'),
+        DeclareLaunchArgument('gripper_rpy', default_value='0 -1.5708 0'),
+        DeclareLaunchArgument('gripper_share',
+                              default_value=_gripper_share_default()),
         ExecuteProcess(
             cmd=['ign', 'gazebo', '-r', '-v', '3', world],
             output='screen',
@@ -297,6 +411,10 @@ def generate_launch_description():
         RegisterEventHandler(
             OnProcessExit(target_action=spawner_jsb,
                           on_exit=[spawner_jgpc]),
+        ),
+        RegisterEventHandler(
+            OnProcessExit(target_action=spawner_jgpc,
+                          on_exit=[spawner_arm]),
         ),
         Node(
             package='go2_description',

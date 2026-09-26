@@ -22,7 +22,7 @@ from shape_msgs.msg import SolidPrimitive
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 BALL_GOAL = (0.35, 0.25, 0.25)
-GRIP_OFFSET = 0.075
+GRIP_OFFSET = 0.10
 OPEN = 0.09
 CLOSE = 0.0
 DOWN_Q = (1.0, 0.0, 0.0, 0.0)
@@ -68,12 +68,18 @@ class Grasp(Node):
         if not client.wait_for_server(timeout_sec=20):
             return False
         f = client.send_goal_async(goal)
-        rclpy.spin_until_future_complete(self, f, timeout_sec=10)
-        h = f.result()
-        if not h or not h.accepted:
+        deadline = time.time() + 10
+        while time.time() < deadline and not f.done():
+            rclpy.spin_once(self, timeout_sec=0.1)
+        h = f.result() if f.done() else None
+        if h is None or not h.accepted:
             return False
         r = h.get_result_async()
-        rclpy.spin_until_future_complete(self, r, timeout_sec=60)
+        deadline = time.time() + 60
+        while time.time() < deadline and not r.done():
+            rclpy.spin_once(self, timeout_sec=0.1)
+        if not r.done():
+            return False
         code = r.result().result.error_code
         return (code.val == success_val) if hasattr(code, 'val') else (code == success_val)
 
@@ -146,6 +152,20 @@ class Grasp(Node):
         return ok, res.fraction
 
 
+    def finger_positions(self):
+        from sensor_msgs.msg import JointState
+        holder = {}
+        sub = self.create_subscription(
+            JointState, '/joint_states',
+            lambda m: holder.update(dict(zip(m.name, m.position))), 10)
+        deadline = time.time() + 3
+        while time.time() < deadline and not holder:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        self.destroy_subscription(sub)
+        return {k: round(holder.get(k, -1), 3)
+                for k in ('gripper_finger1_joint', 'gripper_finger2_joint')}
+
+
 def main():
     rclpy.init()
     node = Grasp()
@@ -184,10 +204,18 @@ def main():
     bb2 = node.ball_base()
     grasp = (bb2[0], bb2[1], bb2[2] + GRIP_OFFSET)
     ok, frac = node.cartesian([grasp])
-    print('descent:', ok, 'frac=%.2f' % frac); log('descent')
+    if not ok:
+        print('  cartesian descent frac=%.2f -> fallback MoveIt' % frac)
+        ok = node.move_to(grasp)
+    print('descent:', ok); log('descent')
     print('close:', node.grip_to(CLOSE)); log('close')
+    fingers = node.finger_positions()
+    print('  finger joints after close:', fingers)
     ok, frac = node.cartesian([lift])
-    print('lift:', ok, 'frac=%.2f' % frac); log('lift')
+    if not ok:
+        print('  cartesian lift frac=%.2f -> fallback MoveIt' % frac)
+        ok = node.move_to(lift)
+    print('lift:', ok); log('lift')
     time.sleep(1.0)
     rclpy.spin_once(node, timeout_sec=0.1)
     lifted = node.ball[2] > BALL_GOAL[2] + 0.06

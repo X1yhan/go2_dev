@@ -23,6 +23,8 @@ PATTERNS=(
     "rviz2"
     "controller_manager"
     "go2_vision"
+    "move_group"
+    "arm_moveit.launch.py"
 )
 
 kill_matching() {

@@ -129,37 +129,6 @@ ign service -s /world/empty/create \
     </model>
 
 
-    <!-- vision target: red ball, radius 0.15 m, driven by target_director -->
-    <model name="red_ball">
-      <pose>1.5 0 0.15 0 0 0</pose>
-      <plugin filename="ignition-gazebo-odometry-publisher-system"
-              name="ignition::gazebo::systems::OdometryPublisher">
-        <odom_frame>world</odom_frame>
-        <robot_base_frame>red_ball</robot_base_frame>
-        <dimensions>3</dimensions>
-        <odom_publish_frequency>30</odom_publish_frequency>
-      </plugin>
-      <link name="link">
-        <inertial>
-          <mass>0.05</mass>
-          <inertia>
-            <ixx>0.00045</ixx>
-            <iyy>0.00045</iyy>
-            <izz>0.00045</izz>
-          </inertia>
-        </inertial>
-        <collision name="collision">
-          <geometry><sphere><radius>0.15</radius></sphere></geometry>
-        </collision>
-        <visual name="visual">
-          <geometry><sphere><radius>0.15</radius></sphere></geometry>
-          <material>
-            <ambient>0.9 0.05 0.05 1</ambient>
-            <diffuse>0.9 0.05 0.05 1</diffuse>
-          </material>
-        </visual>
-      </link>
-    </model>
 
 
     <!-- grasp target: small green ball on the pedestal -->

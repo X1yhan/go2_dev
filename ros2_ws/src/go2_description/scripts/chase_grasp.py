@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""追球抓取:狗走向动态小球(仿真真值坐标),行进中机械臂折叠为监控姿态,
-到位停稳后规划抓取(带球速预测).
+"""追球抓取(动态版):球全程运动,狗走过去,机械臂预测拦截 + 快速闭合抓取.
 
-依赖:gazebo(arm:=true walk:=true auto_forward:=false)+ move_group;
-小球由 target_director 驱动(真值 odometry 提供位置/速度).
+- 球:浮空(z=0.30,无重力+速度衰减),由本脚本 20Hz 遥操作沿正弦摆动
+- 狗:监控姿态折叠 → 追球(真值坐标)→ 停在 STOP_DIST
+- 抓:预测 PLAN_T 秒后球的拦截点 → 快速移到该点(爪张开,等球进来)
+  → 球过拦截点 ±CROSS_TOL 时 0.4s 快速闭合 → 停遥控 → 抬起
+依赖:gazebo(arm:=true walk:=true auto_forward:=false)+ move_group.
 """
 import math
 import sys
@@ -15,7 +17,7 @@ from geometry_msgs.msg import Point, Pose, Twist
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (Constraints, OrientationConstraint,
                              PositionConstraint, BoundingVolume)
-from moveit_msgs.srv import ApplyPlanningScene, GetCartesianPath
+from moveit_msgs.srv import GetCartesianPath
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -24,15 +26,19 @@ from ros_gz_interfaces.srv import SetEntityPose
 from shape_msgs.msg import SolidPrimitive
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-MONITOR_POSE = [0.0, 1.57, -1.2, 0.4, 0.0, 0.0, 0.0]   # 折叠监控视角
-STOP_DIST = 0.42          # 与球的停靠距离(world)
-GRIP_OFFSET = 0.10        # 法兰到夹持中心
+MONITOR_POSE = [0.0, 1.57, -1.2, 0.4, 0.0, 0.0, 0.0]
+BALL_CENTER = (1.5, 0.55, 0.30)
+BALL_AMP = 0.35
+BALL_SPEED = 0.06
+STOP_DIST = 0.42
+GRIP_OFFSET = 0.10
 OPEN = 0.09
 CLOSE = 0.0
 DOWN_Q = (1.0, 0.0, 0.0, 0.0)
-BALL_CENTER = (1.5, 0.55, 0.30)   # world, 浮空小球中心
-BALL_AMP = 0.35                   # y 方向摆动幅度
-BALL_SPEED = 0.06                 # 峰值速度 m/s
+PLAN_T = 3.0           # 拦截提前量 s
+MOVE_SCALE = 0.3       # 机械臂速度缩放(抓动态球要快)
+CLOSE_TIME = 0.4       # 快速闭合时间 s
+CROSS_TOL = 0.02       # 球过拦截点判定 m
 
 
 def clamp(v, lim):
@@ -47,6 +53,8 @@ class ChaseGrasp(Node):
         self.ball_vel = (0.0, 0.0)
         self.dog = None
         self.yaw = 0.0
+        self.ball_t0 = time.time()
+        self.ball_active = False
         self.create_subscription(Odometry, '/model/grasp_ball/odometry',
                                  self._on_ball, 10)
         self.create_subscription(Odometry, '/model/go2/odometry',
@@ -60,9 +68,26 @@ class ChaseGrasp(Node):
         self.set_pose = self.create_client(
             SetEntityPose, '/world/go2_sim/set_pose')
         self.pending_pose = None
-        self.hold_active = False
-        self.hold_y = BALL_CENTER[1]
-        self.create_timer(0.05, self._hold_timer)
+        self.create_timer(0.05, self._ball_timer)
+
+    # ---------- 小球运动 ----------
+    def _ball_y(self, t):
+        omega = BALL_SPEED / BALL_AMP
+        return BALL_CENTER[1] + BALL_AMP * math.sin(omega * t)
+
+    def _ball_timer(self):
+        if not self.ball_active or not self.set_pose.service_is_ready():
+            return
+        if self.pending_pose is not None and not self.pending_pose.done():
+            return
+        req = SetEntityPose.Request()
+        req.entity.name = 'grasp_ball'
+        req.entity.type = Entity.MODEL
+        req.pose.position.x = float(BALL_CENTER[0])
+        req.pose.position.y = float(self._ball_y(time.time() - self.ball_t0))
+        req.pose.position.z = float(BALL_CENTER[2])
+        req.pose.orientation.w = 1.0
+        self.pending_pose = self.set_pose.call_async(req)
 
     # ---------- 状态 ----------
     def _on_ball(self, msg):
@@ -87,52 +112,45 @@ class ChaseGrasp(Node):
         c, s = math.cos(self.yaw), math.sin(self.yaw)
         return (dx*c+dy*s, -dx*s+dy*c, point[2]-(self.dog[2]+0.065))
 
-    def ball_base(self):
-        return self.to_base(self.ball)
-
-    def ball_base_velocity(self):
-        vx, vy = self.ball_vel
-        c, s = math.cos(self.yaw), math.sin(self.yaw)
-        return (vx*c + vy*s, -vx*s + vy*c)
-
-    # ---------- 动作用户端 ----------
+    # ---------- 动作 ----------
     def send(self, client, goal, success_val):
         if not client.wait_for_server(timeout_sec=20):
             return False
         f = client.send_goal_async(goal)
         deadline = time.time() + 10
         while time.time() < deadline and not f.done():
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=0.05)
         h = f.result() if f.done() else None
         if h is None or not h.accepted:
             return False
         r = h.get_result_async()
         deadline = time.time() + 60
         while time.time() < deadline and not r.done():
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=0.05)
         if not r.done():
             return False
         code = r.result().result.error_code
         return (code.val == success_val) if hasattr(code, 'val') \
             else (code == success_val)
 
-    def arm_to(self, joints):
+    def arm_to(self, joints, sec=3.0):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = ['joint1', 'joint2', 'joint3', 'joint4',
                                        'joint5', 'joint6', 'joint7']
         p = JointTrajectoryPoint()
         p.positions = [float(v) for v in joints]
-        p.time_from_start.sec = 3
+        p.time_from_start.sec = int(sec)
         goal.trajectory.points = [p]
         return self.send(self.arm, goal, 0)
 
-    def grip_to(self, q):
+    def grip_to(self, q, sec=CLOSE_TIME):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = ['gripper_finger1_joint',
                                        'gripper_finger2_joint']
         p = JointTrajectoryPoint()
         p.positions = [float(q), float(q)]
-        p.time_from_start.sec = 3
+        p.time_from_start.sec = 0
+        p.time_from_start.nanosec = int(sec * 1e9)
         goal.trajectory.points = [p]
         return self.send(self.grip, goal, 0)
 
@@ -146,14 +164,14 @@ class ChaseGrasp(Node):
         pose.orientation.w = q[3]
         return pose
 
-    def move_to(self, target):
+    def move_to(self, target, scale=MOVE_SCALE):
         goal = MoveGroup.Goal()
         req = goal.request
         req.group_name = 'rm_group'
         req.num_planning_attempts = 10
-        req.allowed_planning_time = 5.0
-        req.max_velocity_scaling_factor = 0.1
-        req.max_acceleration_scaling_factor = 0.1
+        req.allowed_planning_time = 3.0
+        req.max_velocity_scaling_factor = scale
+        req.max_acceleration_scaling_factor = scale
         region = BoundingVolume()
         sp = SolidPrimitive()
         sp.type = SolidPrimitive.SPHERE
@@ -179,7 +197,7 @@ class ChaseGrasp(Node):
         req.goal_constraints.append(c)
         return self.send(self.move, goal, 1)
 
-    def cartesian(self, waypoints):
+    def cartesian(self, waypoints, scale=MOVE_SCALE):
         cli = self.create_client(GetCartesianPath, '/compute_cartesian_path')
         if not cli.wait_for_service(timeout_sec=10):
             return False
@@ -190,11 +208,13 @@ class ChaseGrasp(Node):
         req.max_step = 0.005
         req.jump_threshold = 0.0
         req.avoid_collisions = False
+        req.max_velocity_scaling_factor = scale
+        req.max_acceleration_scaling_factor = scale
         req.waypoints = [self._pose(w) for w in waypoints]
         f = cli.call_async(req)
         deadline = time.time() + 10
         while time.time() < deadline and not f.done():
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=0.05)
         res = f.result() if f.done() else None
         if res is None or res.fraction < 0.85:
             return False
@@ -205,78 +225,18 @@ class ChaseGrasp(Node):
         goal.trajectory.header = traj.header
         return self.send(self.arm, goal, 0)
 
-    def set_scene(self, ball_base):
-        from geometry_msgs.msg import Pose as MsgPose
-        from moveit_msgs.msg import CollisionObject, PlanningScene
-        cli = self.create_client(ApplyPlanningScene, '/apply_planning_scene')
-        if not cli.wait_for_service(timeout_sec=10):
-            return False
-        scene = PlanningScene()
-        scene.is_diff = True
-        ball = CollisionObject()
-        ball.header.frame_id = 'base_link'
-        ball.id = 'grasp_ball'
-        ball.operation = CollisionObject.ADD
-        sp = SolidPrimitive()
-        sp.type = SolidPrimitive.SPHERE
-        sp.dimensions = [0.07]
-        ball.primitives.append(sp)
-        pose = MsgPose()
-        pose.position.x, pose.position.y, pose.position.z = [float(v) for v in ball_base]
-        pose.orientation.w = 1.0
-        ball.primitive_poses.append(pose)
-        scene.world.collision_objects = [ball]
-        req = ApplyPlanningScene.Request()
-        req.scene = scene
-        f = cli.call_async(req)
-        deadline = time.time() + 5
-        while time.time() < deadline and not f.done():
-            rclpy.spin_once(self, timeout_sec=0.1)
-        return f.done()
-
     # ---------- 行为 ----------
-    def _hold_timer(self):
-        if self.hold_active:
-            self._teleport(BALL_CENTER[0], self.hold_y)
-
-    def _teleport(self, x, y):
-        if not self.set_pose.service_is_ready():
-            return
-        if self.pending_pose is not None and not self.pending_pose.done():
-            return
-        req = SetEntityPose.Request()
-        req.entity.name = 'grasp_ball'
-        req.entity.type = Entity.MODEL
-        req.pose.position.x = float(x)
-        req.pose.position.y = float(y)
-        req.pose.position.z = BALL_CENTER[2]
-        req.pose.orientation.w = 1.0
-        self.pending_pose = self.set_pose.call_async(req)
-
-    def teleport_ball(self, t):
-        if not self.set_pose.service_is_ready():
-            return
-        if self.pending_pose is not None and not self.pending_pose.done():
-            return
-        omega = BALL_SPEED / BALL_AMP
-        y = BALL_CENTER[1] + BALL_AMP * math.sin(omega * t)
-        self._teleport(BALL_CENTER[0], y)
-
     def wait_data(self, timeout=20):
         deadline = time.time() + timeout
         while time.time() < deadline and (self.ball is None or self.dog is None):
             rclpy.spin_once(self, timeout_sec=0.1)
         return self.ball is not None and self.dog is not None
 
-    def chase(self, move_ball=True):
+    def chase(self):
         print('chasing ball ...')
         t0 = time.time()
-        last_teleport = 0.0
         while rclpy.ok() and time.time() - t0 < 60:
             rclpy.spin_once(self, timeout_sec=0.05)
-            if move_ball and time.time() - last_teleport > 0.05:
-                self.teleport_ball(time.time() - t0)
-                last_teleport = time.time()
             if self.ball is None or self.dog is None:
                 continue
             dx = self.ball[0] - self.dog[0]
@@ -294,71 +254,74 @@ class ChaseGrasp(Node):
                 cmd.linear.x = clamp(0.8 * (dist - STOP_DIST), 0.3)
             self.cmd_pub.publish(cmd)
         self.cmd_pub.publish(Twist())
-        if self.ball is not None:
-            self.hold_y = self.ball[1]
-        self.hold_active = True
-        print('arrived, dist=%.2f m, settling ...' % math.hypot(
-            self.ball[0]-self.dog[0], self.ball[1]-self.dog[1]))
+        print('arrived, dist=%.2f m, settle 2s (ball keeps moving)'
+              % math.hypot(self.ball[0]-self.dog[0],
+                           self.ball[1]-self.dog[1]))
         deadline = time.time() + 2.0
         while time.time() < deadline:
             self.cmd_pub.publish(Twist())
             rclpy.spin_once(self, timeout_sec=0.1)
 
     def ball_z(self):
-        rclpy.spin_once(self, timeout_sec=0.05)
+        rclpy.spin_once(self, timeout_sec=0.02)
         return self.ball[2] if self.ball else -1.0
 
-    def grasp_once(self, predict=1.2):
-        bb = self.ball_base()
-        vb = self.ball_base_velocity()
-        aim = (bb[0] + clamp(vb[0]*predict, 0.08),
-               bb[1] + clamp(vb[1]*predict, 0.08),
-               bb[2])
-        self.set_scene(bb)
+    def grasp_dynamic(self):
         z0 = self.ball_z()
-        print('aim=(%.3f, %.3f, %.3f) ball_base=(%.3f, %.3f, %.3f) v=(%.3f, %.3f)'
-              % (aim + bb + vb))
-        self.grip_to(OPEN)
-        pre = (aim[0], aim[1], aim[2] + GRIP_OFFSET + 0.08)
-        grasp = (aim[0], aim[1], aim[2] + GRIP_OFFSET)
-        lift = (aim[0], aim[1], aim[2] + GRIP_OFFSET + 0.10)
-        if not self.move_to(pre):
-            print('  pre-grasp plan failed')
-            return False
-        self.hold_active = False
-        deadline = time.time() + 0.3
-        while time.time() < deadline:
-            rclpy.spin_once(self, timeout_sec=0.05)
-        ok = self.cartesian([grasp])
-        if not ok:
-            print('  cartesian descent failed -> MoveIt')
-            if not self.move_to(grasp):
-                return False
-        self.grip_to(CLOSE)
-        ok = self.cartesian([lift])
-        if not ok:
-            ok = self.move_to(lift)
-        deadline = time.time() + 2
-        while time.time() < deadline:
-            rclpy.spin_once(self, timeout_sec=0.1)
-        z1 = self.ball_z()
-        print('  ball z: %.3f -> %.3f' % (z0, z1))
-        return z1 > z0 + 0.05
+        for attempt in range(3):
+            self.ball_active = True
+            t_now = time.time() - self.ball_t0
+            y_target = self._ball_y(t_now + PLAN_T)
+            aim = self.to_base((BALL_CENTER[0], y_target, BALL_CENTER[2]))
+            print('attempt %d: y_target=%.3f aim_base=(%.3f, %.3f, %.3f)'
+                  % (attempt + 1, y_target, aim[0], aim[1], aim[2]))
+            self.grip_to(OPEN, 0.5)
+            pre = (aim[0], aim[1], aim[2] + GRIP_OFFSET + 0.06)
+            if not self.move_to(pre):
+                print('  pre-grasp plan failed')
+                continue
+            grasp = (aim[0], aim[1], aim[2] + GRIP_OFFSET)
+            if not self.cartesian([grasp]):
+                if not self.move_to(grasp):
+                    print('  descent failed')
+                    continue
+            print('  waiting ball crossing ...')
+            t_end = time.time() + 3.0
+            crossed = False
+            while time.time() < t_end:
+                rclpy.spin_once(self, timeout_sec=0.02)
+                if abs(self.ball[1] - y_target) < CROSS_TOL:
+                    crossed = True
+                    break
+            if not crossed:
+                print('  no crossing in 3s -> re-predict')
+                continue
+            print('  crossed -> close')
+            self.ball_active = False
+            self.grip_to(CLOSE, CLOSE_TIME)
+            lift = (aim[0], aim[1], aim[2] + GRIP_OFFSET + 0.12)
+            if not self.cartesian([lift]):
+                self.move_to(lift)
+            deadline = time.time() + 2
+            while time.time() < deadline:
+                rclpy.spin_once(self, timeout_sec=0.1)
+            z1 = self.ball_z()
+            print('  ball z: %.3f -> %.3f' % (z0, z1))
+            if z1 > z0 + 0.05:
+                return True
+            print('  missed, retry')
+            self.grip_to(OPEN, 0.5)
+        return False
 
     def run(self):
         if not self.wait_data():
             print('no ball/dog odometry')
             return False
+        self.ball_t0 = time.time()
+        self.ball_active = True
         print('arm to monitor pose:', self.arm_to(MONITOR_POSE))
-        self.chase(move_ball=True)
-        for attempt in range(2):
-            print('grasp attempt %d ...' % (attempt + 1))
-            if self.grasp_once():
-                return True
-            print('  failed, retry')
-            self.grip_to(OPEN)
-            rclpy.spin_once(self, timeout_sec=0.5)
-        return False
+        self.chase()
+        return self.grasp_dynamic()
 
 
 def main():

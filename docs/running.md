@@ -158,10 +158,11 @@ source ~/rm_ws/install/setup.bash
 ros2 run go2_description chase_grasp.py
 ```
 
-流程:臂折叠到监控姿态(`[0,1.57,-1.2,0.4,0,0,0]`,相机朝前)→ 狗追球
-(y ±0.35m @0.06 m/s,真值坐标)→ 停在 0.42m → 按住球停稳 → 预抓取 → 直线下探
-→ 闭合(含球速预测)→ 抬起。实测:球 z 0.300 → 0.395。
-参数见脚本顶部:`BALL_AMP/BALL_SPEED/STOP_DIST/MONITOR_POSE`。
+流程(球**全程运动**):臂折叠到监控姿态(`[0,1.57,-1.2,0.4,0,0,0]`,相机朝前)
+→ 狗追球(y ±0.35m @0.06 m/s,真值坐标)→ 停在 0.42m → 预测 3s 后拦截点、快移过去
+(爪张开等球进来)→ 球 3s 内没穿过就重新预测(最多 3 次)→ 球进爪瞬间 0.4s 快速闭合
+→ 停遥控 → 抬起。实测:第 3 次预测抓获,球 z 0.300 → 0.413。
+参数见脚本顶部:`BALL_AMP/BALL_SPEED/STOP_DIST/MONITOR_POSE/PLAN_T/MOVE_SCALE/CLOSE_TIME`。
 - 仿真物理用"简化平行爪"(真 AG95 的四连杆机构仅用于显示)
 - 红球 `red_ball`(r=0.15,地面)仍留给视觉链路
 - 环境:~/.bashrc 已指向 `~/go2_dev/ros2_ws/install`;RealMan SDK 在 `~/rm_ws`

@@ -52,10 +52,55 @@ class Grasp(Node):
         self.dog = (p.x, p.y, p.z)
         self.yaw = math.atan2(2*(q.w*q.z + q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
 
-    def ball_base(self):
-        dx, dy = self.ball[0]-self.dog[0], self.ball[1]-self.dog[1]
+    def to_base(self, point):
+        dx, dy = point[0]-self.dog[0], point[1]-self.dog[1]
         c, s = math.cos(self.yaw), math.sin(self.yaw)
-        return (dx*c+dy*s, -dx*s+dy*c, self.ball[2]-(self.dog[2]+0.065))
+        return (dx*c+dy*s, -dx*s+dy*c, point[2]-(self.dog[2]+0.065))
+
+    def ball_base(self):
+        return self.to_base(self.ball)
+
+    def set_scene(self, ball_base, table_base):
+        from geometry_msgs.msg import Pose as MsgPose
+        from moveit_msgs.msg import CollisionObject, PlanningScene
+        from moveit_msgs.srv import ApplyPlanningScene
+        cli = self.create_client(ApplyPlanningScene, '/apply_planning_scene')
+        if not cli.wait_for_service(timeout_sec=10):
+            return False
+        scene = PlanningScene()
+        scene.is_diff = True
+        ball = CollisionObject()
+        ball.header.frame_id = 'base_link'
+        ball.id = 'grasp_ball'
+        ball.operation = CollisionObject.ADD
+        sp = SolidPrimitive()
+        sp.type = SolidPrimitive.SPHERE
+        sp.dimensions = [0.07]
+        ball.primitives.append(sp)
+        pose = MsgPose()
+        pose.position.x, pose.position.y, pose.position.z = ball_base
+        pose.orientation.w = 1.0
+        ball.primitive_poses.append(pose)
+        table = CollisionObject()
+        table.header.frame_id = 'base_link'
+        table.id = 'pedestal'
+        table.operation = CollisionObject.ADD
+        box = SolidPrimitive()
+        box.type = SolidPrimitive.BOX
+        box.dimensions = [0.3, 0.3, 0.25]
+        table.primitives.append(box)
+        tpose = MsgPose()
+        tpose.position.x, tpose.position.y, tpose.position.z = table_base
+        tpose.orientation.w = 1.0
+        table.primitive_poses.append(tpose)
+        scene.world.collision_objects = [ball, table]
+        req = ApplyPlanningScene.Request()
+        req.scene = scene
+        f = cli.call_async(req)
+        deadline = time.time() + 5
+        while time.time() < deadline and not f.done():
+            rclpy.spin_once(self, timeout_sec=0.1)
+        return f.done()
 
     @staticmethod
     def _pose(p, q=DOWN_Q):
@@ -194,6 +239,8 @@ def main():
         print('  [%s] ball=%s' % (tag, tuple(round(v, 3) for v in node.ball)))
 
     bb = node.ball_base()
+    table_base = node.to_base((0.35, 0.25, 0.125))
+    print('planning scene objects set:', node.set_scene(bb, table_base))
     grasp = (bb[0], bb[1], bb[2] + GRIP_OFFSET)
     pre = (bb[0], bb[1], bb[2] + GRIP_OFFSET + 0.08)
     lift = (bb[0], bb[1], bb[2] + GRIP_OFFSET + 0.18)

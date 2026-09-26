@@ -140,8 +140,28 @@ ign model --model go2 | grep "Name: Link"    # Link1~Link7 共 7 条
 ```
 
 说明:
-- 目标球是台面上的**绿色小球 `grasp_ball`(r=0.05,台面高 25cm)**;
-  抓过一次后球不会自己回台面,**重跑前先重启终端 A**(或重启整个仿真)
+- 目标球是**浮空的绿色小球 `grasp_ball`(r=0.05,z=0.30m,无重力+速度衰减)**;
+  抓过一次后需要**重启终端 A**重置
+
+**场景 7:追球抓取(狗走过去 + 折叠监控姿态 + 抓动态浮空球)**
+
+```bash
+~/go2_dev/scripts/kill_sim.sh --force
+# 终端 A:仿真
+cd ~/go2_dev && source scripts/setup_env.sh
+ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=false
+# 终端 B:MoveIt
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+# 终端 C:追球抓取(脚本自己驱动小球摆动)
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description chase_grasp.py
+```
+
+流程:臂折叠到监控姿态(`[0,1.57,-1.2,0.4,0,0,0]`,相机朝前)→ 狗追球
+(y ±0.35m @0.06 m/s,真值坐标)→ 停在 0.42m → 按住球停稳 → 预抓取 → 直线下探
+→ 闭合(含球速预测)→ 抬起。实测:球 z 0.300 → 0.395。
+参数见脚本顶部:`BALL_AMP/BALL_SPEED/STOP_DIST/MONITOR_POSE`。
 - 仿真物理用"简化平行爪"(真 AG95 的四连杆机构仅用于显示)
 - 红球 `red_ball`(r=0.15,地面)仍留给视觉链路
 - 环境:~/.bashrc 已指向 `~/go2_dev/ros2_ws/install`;RealMan SDK 在 `~/rm_ws`

@@ -9,7 +9,7 @@ install(
 )
 
 install(
-  PROGRAMS scripts/go2_trot.py scripts/go2_teleop.py scripts/build_arm_model.py scripts/grasp_ball.py
+  PROGRAMS scripts/go2_trot.py scripts/go2_teleop.py scripts/build_arm_model.py scripts/grasp_ball.py scripts/chase_grasp.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -128,23 +128,6 @@ ign service -s /world/empty/create \
       </link>
     </model>
 
-    <!-- simple props so the front camera / LiDAR have something to see -->
-    <model name="orange_box">
-      <static>true</static>
-      <pose>1.5 0.8 0.25 0 0 0.3</pose>
-      <link name="link">
-        <collision name="collision">
-          <geometry><box><size>0.5 0.5 0.5</size></box></geometry>
-        </collision>
-        <visual name="visual">
-          <geometry><box><size>0.5 0.5 0.5</size></box></geometry>
-          <material>
-            <ambient>0.9 0.5 0.1 1</ambient>
-            <diffuse>0.9 0.5 0.1 1</diffuse>
-          </material>
-        </visual>
-      </link>
-    </model>
 
     <!-- vision target: red ball, radius 0.15 m, driven by target_director -->
     <model name="red_ball">
@@ -178,27 +161,12 @@ ign service -s /world/empty/create \
       </link>
     </model>
 
-    <!-- pedestal for the grasping demo -->
-    <model name="pedestal">
-      <static>true</static>
-      <pose>0.35 0.25 0.125 0 0 0</pose>
-      <link name="link">
-        <collision name="collision">
-          <geometry><box><size>0.3 0.3 0.25</size></box></geometry>
-        </collision>
-        <visual name="visual">
-          <geometry><box><size>0.3 0.3 0.25</size></box></geometry>
-          <material>
-            <ambient>0.4 0.4 0.45 1</ambient>
-            <diffuse>0.4 0.4 0.45 1</diffuse>
-          </material>
-        </visual>
-      </link>
-    </model>
 
     <!-- grasp target: small green ball on the pedestal -->
     <model name="grasp_ball">
-      <pose>0.35 0.25 0.30 0 0 0</pose>
+      <pose>1.5 0.55 0.30 0 0 0</pose>
+      <velocity_decay><linear>2.0</linear><angular>2.0</angular></velocity_decay>
+      <!-- <gravity>false</gravity> 放 link 里 -->
       <plugin filename="ignition-gazebo-odometry-publisher-system"
               name="ignition::gazebo::systems::OdometryPublisher">
         <odom_frame>world</odom_frame>
@@ -207,6 +175,7 @@ ign service -s /world/empty/create \
         <odom_publish_frequency>30</odom_publish_frequency>
       </plugin>
       <link name="link">
+        <gravity>false</gravity>
         <inertial>
           <mass>0.03</mass>
           <inertia><ixx>3e-05</ixx><iyy>3e-05</iyy><izz>3e-05</izz></inertia>
@@ -224,22 +193,6 @@ ign service -s /world/empty/create \
       </link>
     </model>
 
-    <model name="blue_cylinder">
-      <static>true</static>
-      <pose>1.5 -0.8 0.3 0 0 0</pose>
-      <link name="link">
-        <collision name="collision">
-          <geometry><cylinder><radius>0.15</radius><length>0.6</length></cylinder></geometry>
-        </collision>
-        <visual name="visual">
-          <geometry><cylinder><radius>0.15</radius><length>0.6</length></cylinder></geometry>
-          <material>
-            <ambient>0.1 0.2 0.8 1</ambient>
-            <diffuse>0.1 0.2 0.8 1</diffuse>
-          </material>
-        </visual>
-      </link>
-    </model>
 
   </world>
 </sdf>

@@ -10,6 +10,9 @@ third_party/
 __pycache__/
 *.pyc
 
+# 模型权重
+models/
+
 # 其他
 *.zip
 *.log

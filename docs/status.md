@@ -1,8 +1,39 @@
-# 项目状态备忘(2026-09-21)
+# 项目状态备忘(2026-09-29)
 
 > 用途:跨会话交接。下次开工先读这份,再继续。
 
 ## 已完成
+
+### RealSense D435i 真机视觉环境(2026-09-29)
+- 驱动/SDK 用 apt 装(与 third_party 归档同版本,无需编译):
+  `ros-humble-librealsense2 2.58.4`(含 realsense-viewer/rs-* 工具)、
+  `ros-humble-realsense2-camera 4.58.4`;udev 规则 `/etc/udev/rules.d/99-realsense-libusb.rules`
+  (apt 包不带,取自 Intel v2.58.4 `config/99-realsense-libusb.rules`)
+- 实机:D435I SN 243122076038,FW 5.15.1.55;USB3 口(5000M)下 1280x720@30 正常
+  (USB2 口只有 15fps,务必插蓝色/SS 口)
+- RGB+Depth 同时出流稳定性实测:color 1280x720@30 / depth 848x480@30,
+  60s 连续运行 0 丢帧(gap>100ms 计 0),最大帧间隔 ~67ms(偶发,可接受);
+  日志仅 1 条无害 warning(缺 ~/.realsense-config.json,加载默认)
+- 内核 6.8 无 Intel 补丁:V4L2 后端 RGB/深度正常;IMU/硬件时间戳未验证(要用再考虑 RSUSB 源码编译)
+- 启动:`ros2 launch realsense2_camera rs_launch.py camera_name:=d435i`
+  (默认 namespace 与 camera_name 叠加会得到 `/camera/camera/...`,建议显式改 camera_name)
+- Python 识别栈(pip3 --user,清华源):torch 2.14.0+cu130(4060 CUDA 可用)、
+  torchvision 0.29.0、ultralytics 8.4.165、opencv-python 4.11、**numpy 1.26.4(锁 <2 兼容 ROS)**
+- 实测:真实相机抓帧 1280x720 → yolo11n 检出 person conf 0.75,推理 4.1ms;
+  权重 `models/yolo11n.pt`(已 gitignore)
+- **实时识别节点已通**:`yolo_detector.py` + `yolo_d435i.launch.py`(一键:相机 +
+  YOLO + rqt 标注图);`/vision/detections`(Detection2DArray,COCO 80 类,
+  class_id=类名)/`/vision/image_annotated`;USB3 下实测 ~28fps 端到端,
+  `confidence:=0.5`、`device:=cpu|0`、`classes:=['person',...]` 可调
+- **BBOX 深度已通**:launch 默认 `align_depth.enable:=true`(4.58 嵌套参数名)→
+  `/camera/d435i/aligned_depth_to_color/image_raw`(30fps);每个 bbox 取中心 60%
+  区域有效深度中值(不足 min_depth_px=30 回退整框),写 `results[0].pose.pose.position.z`
+  (米,取不到=0);标注图叠 `0.85m` 字样
+  实测:person 0.55m(89% 有效)/laptop 0.85m(78%),静态目标 20s std 0.7cm;
+  屏幕/深色低纹理面有效深度低(tv 6~7%,只有边框有深度),3D 阶段建议带 valid ratio
+  (目前只打日志)
+- 关键坑:相机图像话题是 SensorData QoS(best effort),rclpy 订阅必须显式
+  `ReliabilityPolicy.BEST_EFFORT`,否则收不到帧
 
 ### 狗载传感器仿真(2026-09-21)
 - `ros2 launch go2_description gazebo.launch.py sensors:=true [rviz:=true]`
@@ -115,6 +146,11 @@ ros2 run rqt_image_view rqt_image_view /go2/camera/image       # 狗载相机画
 ros2 launch go2_description gazebo.launch.py walk:=true        # 步态节点(接收 /cmd_vel)
 ros2 run go2_description go2_teleop.py                         # 键盘遥控(需 walk 已开)
 
+ros2 launch go2_vision yolo_d435i.launch.py                    # 真机:相机+YOLO+rqt(标注图)
+ros2 launch go2_vision yolo_d435i.launch.py view:=false        # 不弹 rqt 窗口
+ros2 launch realsense2_camera rs_launch.py camera_name:=d435i  # 只开真机 D435i
+rqt_image_view /camera/d435i/color/image_raw                   # 看真机彩色画面
+
 scripts/kill_sim.sh                                            # 清理全部仿真进程(含 Gazebo/RViz)
 ```
 
@@ -142,3 +178,15 @@ scripts/kill_sim.sh                                            # 清理全部仿
 - `ign gazebo ... &` 抓到的 `$!` 常常是子 shell/ruby wrapper,杀不干净;清理统一用
   `scripts/kill_sim.sh`,别在命令里直接写要 pkill 的模式(会自匹配杀掉当前 shell)。
 - Gitee 不支持 SSH 建 issue,必须走 OpenAPI + 私人令牌。
+- launch 给节点传"看起来像数字的字符串"参数(如 `device:='0'`)要包
+  `ParameterValue(..., value_type=str)`,否则被转成 INT,YAML 里 declare 成
+  STRING 的参数会抛 InvalidParameterTypeException。
+- pip 用户级 `setuptools 84` 和系统 `packaging 21.3` 冲突,colcon 构建 Python 包报
+  `canonicalize_version() got an unexpected keyword argument 'strip_trailing_zero'`;
+  已升 packaging(26.3)+ 降 setuptools(79.0.1)解决。
+- 改 launch 文件后也要 `colcon build`(launch 会装到 install/,不 build 跑的还是旧版;
+  此次 `align_depth.enable` 改完没 build,排查了一轮)。
+- realsense-ros 4.58 的驱动参数是嵌套名(`align_depth.enable`、
+  `rgb_camera.color_profile` 等),rs_launch 同名;不是旧版的 `align_depth`。
+- vision_msgs Humble 的 `Detection2D` **没有 pose 字段**,深度放
+  `results[].pose`(ObjectHypothesisWithPose)。

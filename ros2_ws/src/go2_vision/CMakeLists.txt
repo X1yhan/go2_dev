@@ -21,6 +21,7 @@ install(
     scripts/eval_monitor.py
     scripts/stand_keeper.py
     scripts/visual_servo.py
+    scripts/yolo_detector.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

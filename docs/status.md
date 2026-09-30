@@ -1,4 +1,4 @@
-# 项目状态备忘(2026-09-29)
+# 项目状态备忘(2026-09-30)
 
 > 用途:跨会话交接。下次开工先读这份,再继续。
 
@@ -32,6 +32,23 @@
   实测:person 0.55m(89% 有效)/laptop 0.85m(78%),静态目标 20s std 0.7cm;
   屏幕/深色低纹理面有效深度低(tv 6~7%,只有边框有深度),3D 阶段建议带 valid ratio
   (目前只打日志)
+- **3D 目标定位已通**:`object_3d_localizer.py`——订阅 `/vision/detections` +
+  color `camera_info`(1280x720: fx=904.8 fy=903.8 cx=647.5 cy=371.1),
+  反投影 bbox 中心 `(u,v)+z` → 相机光学系 XYZ;输出 `/vision/detections_3d`
+  (Detection3DArray,bbox3d 尺寸=像素尺寸×z/f)与 `/vision/detections_markers`
+  (RViz CUBE+TEXT,frame=d435i_color_optical_frame);z 无效的检测跳过
+  实测:静态目标 tv X±0.3/Y±0.0/Z±0.7cm,laptop X±0.3/Y±0.1/Z±0.7cm(20s);
+  person 移动中 ±3~7cm;方向正确(画面右侧 X>0)
+- 坑:torch 偶发启动 abort(`ApproximateClock::getCount is non-monotonic`,
+  exit -6,疑似 VM 时钟抖动),重跑即恢复;频繁出现再考虑换 torch 版本/CPU
+- **3D 点云(驱动自带)已通**:launch 默认 `pointcloud.enable:=true`(`pointcloud:=false` 可关),
+  `/camera/d435i/depth/color/points`——PointCloud2,`x@0/y@4/z@8/rgb@16`,
+  point_step=20,unorganized(w×1,~11 万点/帧),is_dense,frame=d435i_depth_optical_frame,
+  30fps(开了之后 color/depth 仍 30fps)
+  实测:xyz 范围合理(z 10/50/90% = 0.5/1.8/4.8m),rgb 100% 非零
+  RViz 配置 `rviz/pointcloud_d435i.rviz`(`rviz:=true` 打开:RGB 点云 + 3D 检测框)
+  注:点云在 **depth** 光学系(贴图来自 color);rgb 是 float32 位打包,
+  解析要 view(uint32) 重解释,不能数值转换(会全 0)
 - 关键坑:相机图像话题是 SensorData QoS(best effort),rclpy 订阅必须显式
   `ReliabilityPolicy.BEST_EFFORT`,否则收不到帧
 
@@ -102,7 +119,7 @@
 
 ### 独立视觉仿真验证环境 `vision_sim`
 - 位置:`ros2_ws/src/vision_sim/`(详见包内 README)
-- 提交:`5cd6e0a feat: 独立视觉仿真验证环境 vision_sim(...)`(**未 push 到 Gitee**)
+- 提交:`5cd6e0a feat: 独立视觉仿真验证环境 vision_sim(...)`(已在 origin/main)
 - 链路:Gazebo D435i `rgbd_camera` → ros_gz 桥接 → HSV 检测 → 深度中值/反投影 → 相机系+世界系 3D 坐标 → 与真值对比
 - headless 实测:相机 30fps 稳定;检测 2400/2400;定位 0 失败;
   sine 0.5 m/s 误差 mean≈1.2cm / rms≈1.3cm / max≈2.4cm(残余主要是 ~25ms 时延)
@@ -117,18 +134,21 @@
 
 ## 下次待办(按优先级)
 
-1. **给 vision_sim 加 `use_nvidia:=true` 开关**(on-demand 模式):
+1. **真机视觉下一步(当前主线)**:点云×检测融合(bbox ROI 裁剪/降采样/统计 →
+   目标 3D 点云);把 3D 定位接入视觉伺服(先固定相机验证);
+   torch 偶发启动崩溃继续观察;有真值(卷尺/标定板)时校一次绝对精度
+2. **给 vision_sim 加 `use_nvidia:=true` 开关**(on-demand 模式):
    GUI 用 `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia`,
    无头用 `__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json`;
    再做核显 vs 独显相机帧率/RTF 对比,数据决定后续。
-2. **加严仿真**:深度噪声/丢失、图像链路延迟注入(让误差接近真机)。
-3. **检测器升级**:YOLO/TensorRT(独显的主战场),评估真实检测误差。
-4. **真机传感器数据补齐**:L1 官方规格(量程/FOV/帧率/点频)、前视相机复标、
+3. **加严仿真**:深度噪声/丢失、图像链路延迟注入(让误差接近真机)。
+4. **检测器升级**:YOLO/TensorRT(独显的主战场),评估真实检测误差。
+5. **真机传感器数据补齐**:L1 官方规格(量程/FOV/帧率/点频)、前视相机复标、
    真机 `utlidar_lidar` 外参;然后跑 `third_party/go2_ros2_sdk`(WebRTC 相机+点云)。
-5. **视觉伺服路线(已定)**:SCOUT(远距目标记忆/导航)→ APPROACH(近距视觉伺服对准)
+6. **视觉伺服路线(已定)**:SCOUT(远距目标记忆/导航)→ APPROACH(近距视觉伺服对准)
    → DOCK(固定距离+朝向停);机械臂到货后扩展 6D 位姿 + 抓取。
    感知分三阶段调试:①完美感知(真值投影)②真实检测器 ③注入延迟/噪声。
-6. (可选)Gazebo GUI 视角自动回位问题:多为右键误开 Follow,取消勾选即可;
+7. (可选)Gazebo GUI 视角自动回位问题:多为右键误开 Follow,取消勾选即可;
    老出问题就给 world 加 `<gui>` 固定初始视角并去掉跟踪插件。
 
 ## 常用命令
@@ -148,6 +168,7 @@ ros2 run go2_description go2_teleop.py                         # 键盘遥控(�
 
 ros2 launch go2_vision yolo_d435i.launch.py                    # 真机:相机+YOLO+rqt(标注图)
 ros2 launch go2_vision yolo_d435i.launch.py view:=false        # 不弹 rqt 窗口
+ros2 launch go2_vision yolo_d435i.launch.py rviz:=true         # +RViz 点云/3D 检测框
 ros2 launch realsense2_camera rs_launch.py camera_name:=d435i  # 只开真机 D435i
 rqt_image_view /camera/d435i/color/image_raw                   # 看真机彩色画面
 

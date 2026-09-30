@@ -22,11 +22,12 @@ install(
     scripts/stand_keeper.py
     scripts/visual_servo.py
     scripts/yolo_detector.py
+    scripts/object_3d_localizer.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(
-  DIRECTORY launch
+  DIRECTORY launch rviz
   DESTINATION share/${PROJECT_NAME}
 )
 

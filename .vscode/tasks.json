@@ -76,6 +76,33 @@
         "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Gazebo: 独立机械臂",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && ros2 launch go2_description arm_bench.launch.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MoveIt: 独立机械臂",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && source ~/rm_ws/install/setup.bash && ros2 launch go2_description arm_moveit.launch.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Visual Grasp: 简单抓取",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && source ~/rm_ws/install/setup.bash && ros2 run go2_description arm_bench_visual_grasp.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
     }
   ]
 }

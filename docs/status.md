@@ -1,8 +1,28 @@
-# 项目状态备忘(2026-09-30)
+# 项目状态备忘(2026-10-20)
 
 > 用途:跨会话交接。下次开工先读这份,再继续。
 
 ## 已完成
+
+### 独立机械臂仿真 arm_bench(2026-10-20)
+- 新增 `worlds/arm_bench.sdf`:地面 + 0.6m 立方桌 + 红色小球 `target_ball`
+  (r=0.035, 世界坐标 `(0.22,0,0.635)`, 带 odometry)
+- 新增 `launch/arm_bench.launch.py`:RM75 基座固定在桌面 `(0,0,0.6)`,
+  Link7 带 D435i RGB-D 传感器 + 简化 AG95 夹爪;默认零位竖立,
+  `start_forward:=true` 时自动到 `forward` 姿态
+- 相机话题:`/arm/camera/{image,depth_image,camera_info,points}`;
+  传感器帧 `arm_bench/Link7/arm_rgbd_camera` 静态接到
+  `camera_depth_optical_frame`;深度背景为 `-inf`
+- `build_arm_model.py` 新增 `--standalone`;RViz 配置 `rviz/arm_bench.rviz`;
+  VSCode 增加“Gazebo/MoveIt: 独立机械臂”任务
+- headless 验证:3 个控制器 active、RGB-D/点云正常、MoveIt 规划执行成功
+- `arm_moveit.launch.py` 可直接复用(标准 RM75 模型,控制器同名)
+- 新增 `scripts/arm_bench_visual_grasp.py`:观察位(Link7 `0.34,0,0.30`,朝下)
+  -> HSV 红球检测 + 深度反投影 -> TF 到 `base_link` -> MoveIt 预抓取/下探
+  -> 夹爪闭合 -> 抬起 -> 球 odometry 校验;`detect_only:=true` 可只看坐标
+- 视觉抓取 headless 实测:`BALL_BASE (0.219, 0, 0.035)`,
+  `GRASP SUCCESS (ball z 0.635 -> 0.814)`;相机 near clip 改为 0.05
+  (桌面距离约 0.25m)
 
 ### RealSense D435i 真机视觉环境(2026-09-29)
 - 驱动/SDK 用 apt 装(与 third_party 归档同版本,无需编译):

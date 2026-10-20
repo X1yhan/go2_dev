@@ -273,6 +273,79 @@ ros2 launch go2_vision vision_pipeline.launch.py \
   `wz_max`(0.8 指令 ≈ 0.5 rad/s 实际)
 - 注意:伺服和键盘遥控别同时开(都在发 `/cmd_vel`)
 
+## 2.5 独立机械臂仿真(arm_bench)
+
+不启动 Go2,只仿真 RM75 机械臂:基座固定在 0.6m 正方体桌面上,Link7 末端带
+D435i RGB-D 相机和简化 AG95 二指夹爪。
+
+```bash
+cd ~/go2_dev && source scripts/setup_env.sh
+
+ros2 launch go2_description arm_bench.launch.py                 # Gazebo GUI
+ros2 launch go2_description arm_bench.launch.py use_gui:=false  # 无界面
+ros2 launch go2_description arm_bench.launch.py rviz:=true      # + RViz
+```
+
+需要 MoveIt2 时另开终端:
+
+```bash
+cd ~/go2_dev && source scripts/setup_env.sh
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+```
+
+启动内容:
+
+- 世界 `worlds/arm_bench.sdf`:地面、0.6m 立方桌、桌面红色小球 `target_ball`
+  `(0.22, 0, 0.635)`,半径 0.035m,带 odometry
+- 基座 spawn 在 `(0, 0, 0.6)`,固定关节锁在世界系
+- 控制器:`joint_state_broadcaster`、`rm_group_controller`、`gripper_controller`
+- 默认保持零位自然竖立不动;需要 `forward` 姿态时加 `start_forward:=true`
+  (会同时张开夹爪)
+- 相机话题:`/arm/camera/{image,depth_image,camera_info,points}`
+- 相机数据帧:`arm_bench/Link7/arm_rgbd_camera`(已静态 TF 到
+  `camera_depth_optical_frame`)
+
+常用参数:
+
+- `camera:=none` / `gripper:=none`:不装相机 / 夹爪
+- `camera_width`(640)/`camera_height`(360)/`camera_fps`(30)/`camera_hfov`(1.518)
+- `spawn_x/spawn_y/spawn_z/spawn_yaw`:机械臂基座在世界系的位置,默认桌面顶面 z=0.6
+- `gripper_simple`(默认 `true`):用简化平行爪做物理;真实 AG95 外观需
+  `third_party/dh_gripper_ros` 并设 `gripper_simple:=false`(仅显示)
+
+注意:默认零位竖立,相机朝向不一定对着桌面;需要看桌面时加
+`start_forward:=true` 到 `forward` 姿态。深度图背景为 `-inf`,
+算法里先过滤 `np.isfinite`。
+
+### 简单视觉抓取
+
+流程:观察位 -> 红色小球检测(HSV)-> 深度反投影 -> TF 到 `base_link`
+-> MoveIt 预抓取/下探 -> 夹爪闭合 -> 抬起 -> 球 odometry 校验。
+
+```bash
+# 终端 A:机械臂仿真
+ros2 launch go2_description arm_bench.launch.py rviz:=true
+
+# 终端 B:MoveIt
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+
+# 终端 C:视觉抓取
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description arm_bench_visual_grasp.py
+
+# 只检测不抓
+ros2 run go2_description arm_bench_visual_grasp.py --ros-args -p detect_only:=true
+```
+
+- 观察位默认 `Link7=(0.34, 0, 0.30)`,工具轴朝下
+- 可调参数:`observe_xyz`、`ball_radius`(0.035)、`grip_offset`(0.18)、
+  `pre_offset`(0.08)、`lift_offset`(0.18)、`open/close`、`detect_only`
+- 调试:`/arm/visual_grasp/debug_image`、`/arm/visual_grasp/marker`
+- 实测:`BALL_BASE (0.219, 0, 0.035)`,抓取后球 z `0.635 -> 0.814`
+- 这是单次检测 + 开环抓取;仿真已知 TF,不需要手眼标定
+
 ## 3. 视觉仿真(vision_sim)
 
 | 命令 | 说明 |
@@ -315,6 +388,9 @@ ros2 run rqt_image_view rqt_image_view /target/debug_image    # 检测框
   - `Gazebo: 走路`
   - `键盘遥控 (需先开 Gazebo: 走路)`
   - `Gazebo: 相机+雷达`
+  - `Gazebo: 独立机械臂`
+  - `MoveIt: 独立机械臂`
+  - `Visual Grasp: 简单抓取`
   - `RViz2: 显示`
 
 Gazebo 和 RViz2 本身就是图形窗口,由 launch 自动打开(`use_gui:=true`)。

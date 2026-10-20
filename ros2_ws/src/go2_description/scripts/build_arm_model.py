@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""把 RM75 URDF 合并到 Go2 URDF 背上(固定挂载).
+"""拼接 RM75 机械臂 / 生成独立机械臂模型.
 
-- 在 Go2 `base`(躯干)上定义载荷挂点 `load_link`(躯干顶面)
-- 机械臂 base_link 通过 `arm_mount_joint` 固定在 load_link 上
-- package:// 网格路径重写成 file://(rm_description 在 third_party 里,未安装)
+- 默认: 把 RM75 URDF 合并到 Go2 URDF 背上(固定挂载)
+- --standalone: 只输出 RM75 模型, 基座通过 world 固定关节锁在世界系,
+  供独立机械臂仿真使用(可继续加深度相机/夹爪)
 
 用法:
     build_arm_model.py --go2-urdf ... --arm-urdf ... --out /tmp/go2_rm75.urdf
+    build_arm_model.py --standalone --arm-urdf ... --camera d435i --gripper ag95
     build_arm_model.py ...             # 不写 --out 则打印到 stdout
 """
 import argparse
@@ -146,6 +147,14 @@ def _rewrite_meshes(root, package, share):
                      filename[len(prefix):])
 
 
+def _drop_links_joints(root, links, joints):
+    for child in list(root):
+        if child.tag == 'link' and child.get('name') in links:
+            root.remove(child)
+        elif child.tag == 'joint' and child.get('name') in joints:
+            root.remove(child)
+
+
 def build(go2_urdf, arm_urdf, go2_share, arm_share,
           plate_xyz=DEFAULT_PLATE_XYZ, arm_xyz='0 0 0', arm_rpy='0 0 0',
           tool_xyz='0 0 0', tool_rpy='0 0 0',
@@ -153,42 +162,47 @@ def build(go2_urdf, arm_urdf, go2_share, arm_share,
           camera_rpy=DEFAULT_CAMERA_RPY, realsense_share='',
           gripper='none', gripper_xyz='0 0 0',
           gripper_rpy='0 -1.5708 0', gripper_share='',
-          gripper_fix_passive=False, gripper_simple=False):
-    go2 = ET.parse(go2_urdf).getroot()
-    arm = ET.parse(arm_urdf).getroot()
-
-    _add_fixed(go2, 'load_joint', 'base', 'load_link', plate_xyz, '0 0 0',
-               add_link=True)
-
-    for child in list(arm):
-        go2.append(child)
-
-    _add_fixed(go2, 'arm_mount_joint', 'load_link', 'base_link',
-               arm_xyz, arm_rpy)
+          gripper_fix_passive=False, gripper_simple=False,
+          standalone=False):
+    if standalone:
+        root = ET.parse(arm_urdf).getroot()
+        _drop_links_joints(root, {'world'}, {'world_joint', 'fixed'})
+        ET.SubElement(root, 'link', {'name': 'world'})
+        _add_fixed(root, 'world_joint', 'world', 'base_link',
+                   '0 0 0', '0 0 0')
+    else:
+        root = ET.parse(go2_urdf).getroot()
+        arm = ET.parse(arm_urdf).getroot()
+        _add_fixed(root, 'load_joint', 'base', 'load_link', plate_xyz,
+                   '0 0 0', add_link=True)
+        for child in list(arm):
+            root.append(child)
+        _add_fixed(root, 'arm_mount_joint', 'load_link', 'base_link',
+                   arm_xyz, arm_rpy)
 
     # flange frame reserved for the gripper
-    _add_fixed(go2, 'tool0_joint', 'Link7', 'tool0', tool_xyz, tool_rpy,
+    _add_fixed(root, 'tool0_joint', 'Link7', 'tool0', tool_xyz, tool_rpy,
                add_link=True)
 
     # camera on a side bracket, flange stays free
     if camera != 'none':
         if not realsense_share:
             raise RuntimeError('camera=%s needs --realsense-share' % camera)
-        _add_fixed(go2, 'camera_mount_joint', 'Link7', 'camera_mount_link',
+        _add_fixed(root, 'camera_mount_joint', 'Link7', 'camera_mount_link',
                    camera_xyz, camera_rpy, add_link=True)
         camera_root = _realsense_children(camera, 'camera_mount_link',
                                           realsense_share)
         for child in list(camera_root):
-            go2.append(child)
+            root.append(child)
 
     # two-finger gripper on the flange
     if gripper != 'none' and gripper_simple:
-        _add_fixed(go2, 'tool0_gripper_joint', 'tool0', 'gripper_base_link',
+        _add_fixed(root, 'tool0_gripper_joint', 'tool0', 'gripper_base_link',
                    '0 0 0.02', '0 0 0')
         for child in list(_simple_gripper_children()):
-            go2.append(child)
+            root.append(child)
         for link in ('gripper_finger1_link', 'gripper_finger2_link'):
-            gz = ET.SubElement(go2, 'gazebo', {'reference': link})
+            gz = ET.SubElement(root, 'gazebo', {'reference': link})
             ET.SubElement(gz, 'mu1').text = '5.0'
             ET.SubElement(gz, 'mu2').text = '5.0'
     elif gripper != 'none':
@@ -197,26 +211,29 @@ def build(go2_urdf, arm_urdf, go2_share, arm_share,
         package = 'dh_robotics_%s_description' % gripper
         urdf_path = os.path.join(gripper_share, 'urdf',
                                  'dh_robotics_%s.urdf' % gripper)
-        _add_fixed(go2, 'tool0_gripper_joint', 'tool0', 'ee_link',
+        _add_fixed(root, 'tool0_gripper_joint', 'tool0', 'ee_link',
                    gripper_xyz, gripper_rpy)
         for child in _gripper_children(urdf_path, gripper_share, package,
                                        gripper_fix_passive):
-            go2.append(child)
+            root.append(child)
 
-    _rewrite_meshes(go2, 'go2_description', go2_share)
-    _rewrite_meshes(go2, 'rm_description', arm_share)
+    if not standalone:
+        _rewrite_meshes(root, 'go2_description', go2_share)
+    _rewrite_meshes(root, 'rm_description', arm_share)
     if camera != 'none':
-        _rewrite_meshes(go2, 'realsense2_description', realsense_share)
+        _rewrite_meshes(root, 'realsense2_description', realsense_share)
     if gripper != 'none':
-        _rewrite_meshes(go2, 'dh_robotics_%s_description' % gripper,
+        _rewrite_meshes(root, 'dh_robotics_%s_description' % gripper,
                         gripper_share)
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
-            + ET.tostring(go2, encoding='unicode') + '\n')
+            + ET.tostring(root, encoding='unicode') + '\n')
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--go2-urdf', required=True)
+    parser.add_argument('--standalone', action='store_true',
+                        help='只输出 RM75 模型(基座固定到 world),不拼接 Go2')
+    parser.add_argument('--go2-urdf', default='')
     parser.add_argument('--arm-urdf', required=True)
     parser.add_argument('--go2-share', default='')
     parser.add_argument('--arm-share', default='')
@@ -242,12 +259,19 @@ def main():
     parser.add_argument('--out')
     args = parser.parse_args()
 
+    if not args.standalone:
+        if not args.go2_urdf:
+            parser.error('--go2-urdf is required unless --standalone is set')
+        if not args.go2_share:
+            parser.error('--go2-share is required unless --standalone is set')
+
     urdf = build(args.go2_urdf, args.arm_urdf, args.go2_share,
                  args.arm_share, args.plate_xyz, args.arm_xyz, args.arm_rpy,
                  args.tool_xyz, args.tool_rpy, args.camera, args.camera_xyz,
                  args.camera_rpy, args.realsense_share, args.gripper,
                  args.gripper_xyz, args.gripper_rpy, args.gripper_share,
-                 args.gripper_fix_passive, args.gripper_simple)
+                 args.gripper_fix_passive, args.gripper_simple,
+                 standalone=args.standalone)
     if args.out:
         with open(args.out, 'w') as handle:
             handle.write(urdf)

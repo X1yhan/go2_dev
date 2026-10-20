@@ -60,6 +60,7 @@ sudo apt install -y \
   ros-humble-ros2-control ros-humble-ros2-controllers ros-humble-gz-ros2-control \
   ros-humble-xacro ros-humble-joint-state-publisher ros-humble-joint-state-publisher-gui \
   ros-humble-robot-state-publisher ros-humble-rviz2 \
+  ros-humble-tf2-ros ros-humble-tf2-geometry-msgs \
   ros-humble-cv-bridge ros-humble-vision-msgs ros-humble-rqt-image-view \
   ros-humble-realsense2-description \
   python3-opencv python3-numpy
@@ -182,6 +183,9 @@ ros2 launch vision_sim vision_sim.launch.py use_gui:=false rviz:=false
 # ⑤ 狗背 RM75 + MoveIt（需先完成第 4 步）
 ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=false
 source ~/rm_ws/install/setup.bash && ros2 launch go2_description arm_moveit.launch.py
+
+# ⑥ 独立 RM75 桌面仿真（带 D435i RGB-D + 夹爪）
+ros2 launch go2_description arm_bench.launch.py use_gui:=false
 ```
 
 清理残留进程：`scripts/kill_sim.sh`（顽固情况 `--force`）。

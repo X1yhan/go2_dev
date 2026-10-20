@@ -12,6 +12,8 @@ Unitree Go2 EDU 的 ROS2 仿真、视觉与机械臂开发工程。
 - 独立视觉仿真 `vision_sim`：D435i + 移动目标 + 3D 定位精度评估
 - 狗载视觉 `go2_vision`：红球检测 + 相机/雷达融合定位
 - 狗背 RM75 机械臂：URDF 拼接、ros2_control、MoveIt2 规划
+- 独立机械臂仿真 `arm_bench`：RM75 + D435i RGB-D + 夹爪，固定在正方体桌面上
+- 简单视觉抓取：相机检测桌面红球 → 深度反投影 → MoveIt 抓取
 - **机械臂抓球（本文重点）**：
   - `grasp_ball.py`：固定位置绿球抓取，已验证球从 z=0.30m 抬到 z=0.45m
   - `chase_grasp.py`：狗追运动球 + 侧向拦截抓取
@@ -81,7 +83,7 @@ sudo apt install -y \
   ros-humble-gz-ros2-control \
   ros-humble-xacro ros-humble-joint-state-publisher \
   ros-humble-joint-state-publisher-gui ros-humble-robot-state-publisher \
-  ros-humble-rviz2 ros-humble-tf2-ros \
+  ros-humble-rviz2 ros-humble-tf2-ros ros-humble-tf2-geometry-msgs \
   ros-humble-moveit ros-humble-realsense2-description \
   ros-humble-cv-bridge ros-humble-vision-msgs ros-humble-rqt-image-view \
   python3-opencv python3-numpy \
@@ -425,7 +427,126 @@ ros2 launch go2_description display_arm.launch.py
 ros2 launch go2_description display_arm.launch.py gripper:=none
 ```
 
-### 8.4 真机功能
+### 8.4 独立机械臂仿真 `arm_bench`
+
+不启动 Go2，只仿真 RM75 机械臂。机械臂基座固定在一个 0.6m 正方体桌面上，
+Link7 末端装 D435i RGB-D 相机和简化 AG95 二指夹爪。
+
+```bash
+cd ~/go2_dev
+source scripts/setup_env.sh
+ros2 launch go2_description arm_bench.launch.py
+```
+
+常用参数：
+
+```bash
+# 无 Gazebo 界面
+ros2 launch go2_description arm_bench.launch.py use_gui:=false
+
+# 同时打开 RViz（机器人 + 彩色图 + 深度图 + 点云）
+ros2 launch go2_description arm_bench.launch.py rviz:=true
+
+# 不要相机 / 不要夹爪
+ros2 launch go2_description arm_bench.launch.py camera:=none
+ros2 launch go2_description arm_bench.launch.py gripper:=none
+```
+
+启动内容：
+
+- 世界 `worlds/arm_bench.sdf`：地面、0.6m 立方桌、桌面上的红色小球 `target_ball`
+- 机械臂基座在 `(0, 0, 0.6)`，通过固定关节锁在世界系
+- 控制器：`joint_state_broadcaster`、`rm_group_controller`、
+  `gripper_controller`
+- 默认保持零位自然竖立、不动；需要 `forward` 准备姿态时加
+  `start_forward:=true`（同时张开夹爪）
+- 相机话题：
+  - `/arm/camera/image`（彩色）
+  - `/arm/camera/depth_image`（深度，背景为 `-inf`，使用前过滤 finite）
+  - `/arm/camera/camera_info`
+  - `/arm/camera/points`（RGB 点云，PointCloud2）
+- 相机数据帧：`arm_bench/Link7/arm_rgbd_camera`，已通过静态 TF 接到
+  `camera_depth_optical_frame`
+
+需要 MoveIt2 规划时，另开终端：
+
+```bash
+cd ~/go2_dev
+source scripts/setup_env.sh
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+```
+
+MoveIt 使用 `rm_75_config` 里的标准 RM75 模型（不含相机/夹爪外观），控制的仍是
+同一套 `rm_group_controller`。可在 RViz 里拖动 MotionPlanning 目标继续调姿态。
+
+在已完成第 2.2 节 apt 依赖的前提下，不要 Go2 时这个仿真只需要：
+
+- apt 的 `ros-humble-realsense2-description`（D435i 模型）
+- `third_party/ros2_rm_robot`（RM75 URDF）
+- 可选 `third_party/dh_gripper_ros`（只用于真实 AG95 外观；默认简化夹爪不需要）
+
+### 8.5 简单视觉抓取（`arm_bench`）
+
+在 `arm_bench` 桌面上放一个红色小球，机械臂先到观察位，用 D435i 找到球，
+再把球的三维坐标转换到 `base_link`，最后 MoveIt 预抓取 → 下探 → 夹爪闭合 →
+抬起。当前是**单次检测 + 开环抓取**，不是连续视觉伺服。
+
+三个终端：
+
+```bash
+# 终端 A：机械臂仿真
+cd ~/go2_dev && source scripts/setup_env.sh
+ros2 launch go2_description arm_bench.launch.py rviz:=true
+
+# 终端 B：MoveIt
+cd ~/go2_dev && source scripts/setup_env.sh
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+
+# 终端 C：视觉抓取
+cd ~/go2_dev && source scripts/setup_env.sh
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description arm_bench_visual_grasp.py
+```
+
+只看检测、不抓取：
+
+```bash
+ros2 run go2_description arm_bench_visual_grasp.py \
+  --ros-args -p detect_only:=true
+```
+
+目标物与坐标：
+
+- 红球 `target_ball`：世界坐标 `(0.22, 0, 0.635)`，半径 `0.035m`
+- 桌面顶面 `z=0.6`
+- 观察位默认 `Link7=(0.34, 0, 0.30)`，工具轴朝下，相机在球上方
+- 已验证输出：`BALL_BASE x=0.219 y=0.000 z=0.035`，
+  `GRASP SUCCESS (ball z 0.635 -> 0.814)`
+
+可调参数：
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `observe_xyz` | `0.34 0 0.30` | 观察位 Link7 坐标（base_link） |
+| `ball_radius` | `0.035` | 球半径，深度补到球心 |
+| `grip_offset` | `0.18` | 抓取时 Link7 相对球心的高度 |
+| `pre_offset` | `0.08` | 预抓取比抓取点高多少 |
+| `lift_offset` | `0.18` | 抬起高度 |
+| `open` / `close` | `0.09` / `0.0` | 夹爪开合位置 |
+| `detect_only` | `false` | 只检测并打印坐标 |
+
+相关话题：
+
+- `/arm/visual_grasp/debug_image`：带检测框的调试图像
+- `/arm/visual_grasp/marker`：检测到的球位置 Marker
+- `/model/target_ball/odometry`：球的世界坐标（验证用）
+
+说明：相机和 Link7 的 TF 由 URDF 精确给出，仿真里不需要手眼标定；
+抓取脚本直接用 `camera_depth_optical_frame -> base_link`。
+
+### 8.6 真机功能
 
 真机部分才需要 `unitree_ros2`、`unitree_sdk2`、`unitree_sdk2_python`、
 `go2_ros2_sdk`、`realsense-ros` 等，按 `docs/setup.md` 第 11 节操作。
@@ -496,6 +617,13 @@ ros2 launch go2_description gazebo.launch.py arm:=true walk:=true auto_forward:=
 ```bash
 pip3 install --user "numpy<2"
 ```
+
+### 9.8 视觉抓取检测不到球
+
+- 先 `arm_bench.launch.py` + `arm_moveit.launch.py` 都启动，再跑抓取脚本
+- 在 RViz 看 `GraspDebug` 图像；球不在画面里就调 `observe_xyz`
+- 确认球是红色、没有被机械臂挡住；`camera_clip_near` 默认 0.05，桌面距离约 0.25m
+- 先用 `detect_only:=true` 只验证坐标，再抓取
 
 ## 10. 更多文档
 

@@ -127,11 +127,14 @@ ros2 launch go2_description arm_moveit.launch.py
 
 # 终端 C:抓取演示(等 B 起来后)
 source ~/rm_ws/install/setup.bash
+# 当前世界默认球在 x=1.5(给追球脚本用),先复位到机械臂前方
+ros2 service call /world/go2_sim/set_pose ros_gz_interfaces/srv/SetEntityPose \
+  "{entity: {name: grasp_ball, type: 2}, pose: {position: {x: 0.35, y: 0.25, z: 0.30}, orientation: {w: 1.0}}}"
 ros2 run go2_description grasp_ball.py
 ```
 
-流程:臂回零 → 开爪 → MoveIt 到预抓取位 → 笛卡尔直线下探 → 夹爪闭合 →
-直线抬起 → 校验球被抬起(z 0.30 → 0.45)。
+流程:球复位 → 臂回零 → 开爪 → MoveIt 到预抓取位 → 笛卡尔直线下探 →
+夹爪闭合 → 直线抬起 → 校验球被抬起(球从 z=0.30 抬到约 0.45)。
 
 自检:
 ```bash

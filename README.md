@@ -14,6 +14,8 @@ Unitree Go2 EDU 的 ROS2 仿真、视觉与机械臂开发工程。
 - 狗背 RM75 机械臂：URDF 拼接、ros2_control、MoveIt2 规划
 - 独立机械臂仿真 `arm_bench`：RM75 + D435i RGB-D + 夹爪，固定在正方体桌面上
 - 简单视觉抓取：相机检测桌面红球 → 深度反投影 → MoveIt 抓取
+- 多物体识别抓取：红球/蓝方块/绿圆柱/黄盒子按 `target_class` 选择并抓取
+- 自然语言交互：终端输入“把红球放到黄盒子旁边”等中文指令，确认后执行
 - **机械臂抓球（本文重点）**：
   - `grasp_ball.py`：固定位置绿球抓取，已验证球从 z=0.30m 抬到 z=0.45m
   - `chase_grasp.py`：狗追运动球 + 侧向拦截抓取
@@ -447,6 +449,9 @@ ros2 launch go2_description arm_bench.launch.py use_gui:=false
 # 同时打开 RViz（机器人 + 彩色图 + 深度图 + 点云）
 ros2 launch go2_description arm_bench.launch.py rviz:=true
 
+# 另开 rqt_image_view 看末端相机实时画面（view_topic 可换话题）
+ros2 launch go2_description arm_bench.launch.py view:=true
+
 # 不要相机 / 不要夹爪
 ros2 launch go2_description arm_bench.launch.py camera:=none
 ros2 launch go2_description arm_bench.launch.py gripper:=none
@@ -454,7 +459,8 @@ ros2 launch go2_description arm_bench.launch.py gripper:=none
 
 启动内容：
 
-- 世界 `worlds/arm_bench.sdf`：地面、0.6m 立方桌、桌面上的红色小球 `target_ball`
+- 世界 `worlds/arm_bench.sdf`：地面、0.6m 立方桌、桌面上 4 个彩色物体
+  （红球 / 蓝方块 / 绿圆柱 / 黄盒子，各带 odometry）
 - 机械臂基座在 `(0, 0, 0.6)`，通过固定关节锁在世界系
 - 控制器：`joint_state_broadcaster`、`rm_group_controller`、
   `gripper_controller`
@@ -478,7 +484,21 @@ ros2 launch go2_description arm_moveit.launch.py
 ```
 
 MoveIt 使用 `rm_75_config` 里的标准 RM75 模型（不含相机/夹爪外观），控制的仍是
-同一套 `rm_group_controller`。可在 RViz 里拖动 MotionPlanning 目标继续调姿态。
+同一套 `rm_group_controller`。可在 RViz 里拖动 MotionPlanning 目标继续调姿态
+（适合笛卡尔点动，Plan & Execute，不用写程序）。
+
+想在仿真里像示教器一样实时点动关节，用键盘示教脚本（无需额外安装）：
+
+```bash
+# 终端 B：arm_bench.launch.py 运行中
+ros2 run go2_description arm_bench_teleop.py
+#   1..7 选关节，w/s 正/负方向，+/- 调步长，g 夹爪开合，
+#   0 回零位，f forward 姿态，p 打印关节角，q 退出
+```
+
+也可以装 `sudo apt install ros-humble-rqt-joint-trajectory-controller`，然后
+`ros2 run rqt_joint_trajectory_controller rqt_joint_trajectory_controller`，
+选 `/controller_manager` + `rm_group_controller`，用滑条像示教器一样拖动。
 
 在已完成第 2.2 节 apt 依赖的前提下，不要 Go2 时这个仿真只需要：
 
@@ -486,67 +506,167 @@ MoveIt 使用 `rm_75_config` 里的标准 RM75 模型（不含相机/夹爪外�
 - `third_party/ros2_rm_robot`（RM75 URDF）
 - 可选 `third_party/dh_gripper_ros`（只用于真实 AG95 外观；默认简化夹爪不需要）
 
-### 8.5 简单视觉抓取（`arm_bench`）
+### 8.5 多物体识别与纯视觉抓放（`arm_bench`）
 
-在 `arm_bench` 桌面上放一个红色小球，机械臂先到观察位，用 D435i 找到球，
-再把球的三维坐标转换到 `base_link`，最后 MoveIt 预抓取 → 下探 → 夹爪闭合 →
-抬起。当前是**单次检测 + 开环抓取**，不是连续视觉伺服。
+桌面上放了 4 个彩色物体，检测节点识别标签，抓取脚本用**相机 + 深度 + TF**
+扫描定位，再做抓取/放置。**位置不使用 Gazebo odometry**；类别尺寸和桌面
+高度作为先验。
 
-三个终端：
+一键启动见 8.6。手动分终端：
 
 ```bash
-# 终端 A：机械臂仿真
+# 终端 A：机械臂仿真（先启动，会生成 MoveIt 用的装配 URDF）
 cd ~/go2_dev && source scripts/setup_env.sh
-ros2 launch go2_description arm_bench.launch.py rviz:=true
+ros2 launch go2_description arm_bench.launch.py rviz:=true view:=true
 
-# 终端 B：MoveIt
-cd ~/go2_dev && source scripts/setup_env.sh
+# 终端 B：MoveIt（必须在 A 之后；使用装配模型，含相机/夹爪碰撞）
 source ~/rm_ws/install/setup.bash
 ros2 launch go2_description arm_moveit.launch.py
 
-# 终端 C：视觉抓取
-cd ~/go2_dev && source scripts/setup_env.sh
+# 终端 C：多物体检测（必须运行）
+ros2 run go2_description arm_bench_object_detector.py
+
+# 终端 D：扫描 + 抓取（默认 red_ball）
 source ~/rm_ws/install/setup.bash
-ros2 run go2_description arm_bench_visual_grasp.py
-```
-
-只看检测、不抓取：
-
-```bash
 ros2 run go2_description arm_bench_visual_grasp.py \
-  --ros-args -p detect_only:=true
+  --ros-args -p target_class:=blue_cube
 ```
 
-目标物与坐标：
+桌面物体（世界坐标，base_link 在桌面中心 `z=0.6`）：
 
-- 红球 `target_ball`：世界坐标 `(0.22, 0, 0.635)`，半径 `0.035m`
-- 桌面顶面 `z=0.6`
-- 观察位默认 `Link7=(0.34, 0, 0.30)`，工具轴朝下，相机在球上方
-- 已验证输出：`BALL_BASE x=0.219 y=0.000 z=0.035`，
-  `GRASP SUCCESS (ball z 0.635 -> 0.814)`
+| 标签 | 模型 | 位置 | 尺寸 |
+| --- | --- | --- | --- |
+| `red_ball` | `target_ball` | `(0.22, 0, 0.635)` | 球 r=0.035 |
+| `blue_cube` | `blue_cube` | `(0.26, -0.16, 0.635)` | 0.07 立方 |
+| `green_cylinder` | `green_cylinder` | `(0.15, 0.11, 0.65)` | r=0.04, h=0.10 |
+| `yellow_box` | `yellow_box` | `(0.25, 0.16, 0.635)` | 0.10 x 0.075 x 0.07 |
+
+检测/扫描：
+
+- 检测节点按 HSV 颜色输出 `/arm/vision/detections`（`Detection2DArray`，
+  `class_id`=标签）和 `/arm/vision/image_annotated`
+- 抓取脚本先做 6 个观察位扫描（默认观察位最后）并在**没找到目标时补扫**；
+  两轮都没有就报“不在视野”并停止
+- 3D 定位：球用 bbox+深度+半径/桌面先验；方块/圆柱用颜色 mask 内的
+  最近深度顶面；都用 `camera_depth_optical_frame -> base_link` 的 TF
+- 全部位置来自扫描；不再订阅 `/model/*/odometry`
+
+抓取/放置流程：
+
+1. 扫描结果加入 MoveIt planning scene；确认抓取目标和放置目标都在扫描里
+2. MoveIt 预抓取（装配模型含相机/夹爪，避免撞本体/桌子）→ 把被抓物从
+   collision scene 移除 → 垂直 Cartesian 下探 → 按类别 open 接近 →
+   按物体宽度闭合 → 垂直抬起
+3. 搬运用高路径；放置按物体宽度只张开到刚好释放；放完再用相机复检
+4. `place_mode=on_top` 只支持方块/黄盒；旁边放置自动找 3cm 边到边空位
+
+实测：
+
+- 语言多步命令（红球放黄盒旁边 → 蓝方块叠到黄盒上）跑通；
+  放置后视觉校验分别约 `(0.239,0.043,0.020)` 和 `(0.223,0.159,0.105)`
+- 红球是球体，抓取时手指偶尔不对称；球叠到平面上会滚落，建议用方块/
+  圆柱叠放，或把球放“旁边”
+- 扫描约 60–90s/次（6 个观察位），默认位通常已经能看到全部物体，
+  后续会把扫描改成“默认位优先、缺目标再环顾”的 lazy 模式
 
 可调参数：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `observe_xyz` | `0.34 0 0.30` | 观察位 Link7 坐标（base_link） |
-| `ball_radius` | `0.035` | 球半径，深度补到球心 |
-| `grip_offset` | `0.18` | 抓取时 Link7 相对球心的高度 |
-| `pre_offset` | `0.08` | 预抓取比抓取点高多少 |
+| `target_class` | `red_ball` | 抓取目标标签 |
+| `grip_offset` | `-1` | -1 用类别默认（球/方块 0.17，圆柱 0.15） |
+| `pre_offset` | `0.10` | 预抓取高度 |
 | `lift_offset` | `0.18` | 抬起高度 |
-| `open` / `close` | `0.09` / `0.0` | 夹爪开合位置 |
-| `detect_only` | `false` | 只检测并打印坐标 |
+| `open` | `-1` | -1 用类别默认（球 0.05，其它 0.04） |
+| `close` | `-1` | -1 用类别默认（圆柱 0.028，黄盒 0.025，其余 0） |
+| `place_class` | 空 | 放置目标；空=只抓取 |
+| `place_mode` | `on_top` | `on_top`（仅方块/黄盒）或 `beside` |
+| `place_offset` | `0.03` | 旁放边到边间隙（米） |
+| `place_clearance` | `0.0` | 释放余量 |
+| `scan_only` | `false` | 只扫描并打印可见物体/坐标 |
+| `detect_only` | `false` | 扫描后只打印，不抓 |
 
-相关话题：
+说明：
 
-- `/arm/visual_grasp/debug_image`：带检测框的调试图像
-- `/arm/visual_grasp/marker`：检测到的球位置 Marker
-- `/model/target_ball/odometry`：球的世界坐标（验证用）
+- MoveIt 使用的是和 Gazebo 同一套装配 URDF（RM75 + D435i + AG95），
+  相机/夹爪参与碰撞检查；`arm_moveit.launch.py` 必须在
+  `arm_bench.launch.py` 之后启动（前者读取后者写出的装配 URDF）
+- RViz 不加载 Gazebo 的 SDF 世界：A 的 RViz 里看到的是相机点云/图像，
+  MoveIt RViz 里看到的是扫描出来的 collision objects，不是 Gazebo 模型；
+  两边布局不完全一致是数据源不同，不是 Gazebo 布局变了
 
-说明：相机和 Link7 的 TF 由 URDF 精确给出，仿真里不需要手眼标定；
-抓取脚本直接用 `camera_depth_optical_frame -> base_link`。
+### 8.6 自然语言交互（规则语法）
 
-### 8.6 真机功能
+终端输入中文，程序解析成动作并**先显示计划、确认后才执行**；持续接收指令，
+说“结束了”退出。
+
+**一键启动（推荐，单个终端）**
+
+```bash
+cd ~/go2_dev
+scripts/start_arm_bench.sh
+```
+
+脚本会自动编译、启动 Gazebo + 机械臂 RViz + 相机窗口 + MoveIt + 物体检测，
+最后把自然语言终端放在前台。输入“结束了”时所有后台进程一起停止。
+
+```bash
+scripts/start_arm_bench.sh --headless      # 无 GUI/RViz/相机窗口
+scripts/start_arm_bench.sh --moveit-rviz   # 用 MoveIt RViz 替代机械臂 RViz
+scripts/start_arm_bench.sh --no-build      # 跳过 colcon build
+```
+
+日志在 `/tmp/arm_bench_{sim,moveit,detector}.log`。
+
+手动分终端启动（可选）：
+
+```bash
+cd ~/go2_dev && source scripts/setup_env.sh
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description arm_bench_language.py
+```
+
+交互示例：
+
+```text
+指令> 把红球放到黄盒子旁边
+解析结果:
+1. 抓取 红球(red_ball) → 放到 黄盒子(yellow_box) 旁边(3cm 空位)
+确认执行? [y/N] y
+[1/1] 抓取红球 → 放到黄盒旁边
+  ...（MoveIt/夹爪/odometry 日志）...
+  PLACE SUCCESS red_ball -> yellow_box ...
+完成。
+指令> 桌上有什么
+当前物体(标签/是否可见/base_link 坐标):
+  red_ball 可见 (0.205, 0.027, 0.035)
+  ...
+指令> 结束了
+再见。
+```
+
+支持的句式：
+
+- `抓红球` / `把红球拿起来`：只抓取（会把物体留在夹爪里）
+- `去抓红球,放到黄盒子上`：抓取 + 叠放（目标必须是方块/黄盒子）
+- `把蓝方块放到绿圆柱旁边`：抓取 + 旁边放置（自动找 3cm 空位）
+- `抓红球放到黄盒子上,然后抓蓝方块放到绿圆柱旁边`：多步顺序执行
+- `桌上有什么` / `查询物体`；`帮助`；`停止`；`结束了`/`退出`/`q`
+
+规则：
+
+- 多步用 `然后` / `再` / `接着` / `；` 连接；句内逗号不影响“抓X,放到Y”
+- 物体别名：红球、蓝方块、绿圆柱、黄盒子；颜色只认红/蓝/绿/黄
+- 确认必须输入 `y/yes/是/确认/执行/可以`，直接回车或其它内容=取消
+- 执行前显示解析结果；多步只确认一次；某一步失败立即停止
+- “放到旁边”在目标周围 8 个方向找空位，边到边约 3cm，并检查桌面边界和
+  其它物体间距；“放到上面”会检查目标顶面，球/圆柱顶面太小会拒绝
+- 球体（红球）叠放到平面上机构上能放，但可能几秒后滚落；需要稳定叠放时
+  用方块/圆柱，或说“放到旁边”；REPL 会给出提示
+- 语言脚本用子进程逐个调用 `arm_bench_visual_grasp.py`；中间失败会停止并
+  报告是哪一步
+
+### 8.7 真机功能
 
 真机部分才需要 `unitree_ros2`、`unitree_sdk2`、`unitree_sdk2_python`、
 `go2_ros2_sdk`、`realsense-ros` 等，按 `docs/setup.md` 第 11 节操作。

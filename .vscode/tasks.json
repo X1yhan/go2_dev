@@ -96,6 +96,51 @@
       "problemMatcher": []
     },
     {
+      "label": "Arm Bench: 键盘示教",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && ros2 run go2_description arm_bench_teleop.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Arm Bench: 多物体检测",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && ros2 run go2_description arm_bench_object_detector.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "一键启动: 机械臂仿真+MoveIt+检测+语言",
+      "type": "shell",
+      "command": "bash scripts/start_arm_bench.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Arm Bench: 自然语言控制",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && source ~/rm_ws/install/setup.bash && ros2 run go2_description arm_bench_language.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Visual Grasp: 抓取蓝方块",
+      "type": "shell",
+      "command": "source scripts/setup_env.sh && source ~/rm_ws/install/setup.bash && ros2 run go2_description arm_bench_visual_grasp.py --ros-args -p target_class:=blue_cube",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Visual Grasp: 简单抓取",
       "type": "shell",
       "command": "source scripts/setup_env.sh && source ~/rm_ws/install/setup.bash && ros2 run go2_description arm_bench_visual_grasp.py",

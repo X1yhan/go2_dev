@@ -57,7 +57,7 @@ def _gripper_children(urdf_path, share, package, fix_passive=False):
 
 def _simple_gripper_children(base_len=0.10, finger_travel=0.10):
     """简化二指平行爪(仿真物理用):两个 prismatic 指,接口与 AG95 一致."""
-    half = base_len / 2.0
+    closed_offset = 0.015  # inner faces ~9 mm apart when q=0
     return ET.fromstring((
         '<robot>'
         '  <link name="gripper_base_link">'
@@ -76,14 +76,14 @@ def _simple_gripper_children(base_len=0.10, finger_travel=0.10):
         f'  <joint name="gripper_finger1_joint" type="prismatic">'
         f'    <parent link="gripper_base_link"/>'
         f'    <child link="gripper_finger1_link"/>'
-        f'    <origin xyz="0 {half - 0.01:.3f} 0.06" rpy="0 0 0"/>'
+        f'    <origin xyz="0 {closed_offset:.3f} 0.06" rpy="0 0 0"/>'
         '    <axis xyz="0 1 0"/>'
         f'    <limit lower="0" upper="{finger_travel}" effort="50" velocity="0.2"/>'
         '  </joint>'
         f'  <joint name="gripper_finger2_joint" type="prismatic">'
         f'    <parent link="gripper_base_link"/>'
         f'    <child link="gripper_finger2_link"/>'
-        f'    <origin xyz="0 {-half + 0.01:.3f} 0.06" rpy="0 0 0"/>'
+        f'    <origin xyz="0 {-closed_offset:.3f} 0.06" rpy="0 0 0"/>'
         '    <axis xyz="0 -1 0"/>'
         f'    <limit lower="0" upper="{finger_travel}" effort="50" velocity="0.2"/>'
         '  </joint>'

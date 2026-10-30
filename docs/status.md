@@ -23,6 +23,92 @@
 - 视觉抓取 headless 实测:`BALL_BASE (0.219, 0, 0.035)`,
   `GRASP SUCCESS (ball z 0.635 -> 0.814)`;相机 near clip 改为 0.05
   (桌面距离约 0.25m)
+- 新增 `scripts/arm_bench_teleop.py`:键盘示教(1..7 选关节、w/s jog、
+  +/- 步长、g 夹爪、0/f 姿态、p 状态),以 20Hz 流式发
+  `/rm_group_controller/joint_trajectory`(JTC 该话题订阅是 BEST_EFFORT);
+  实测 joint3 +0.06 rad、夹爪闭合正常
+- `rviz:=true` 的 Fixed Frame 用 `base_link`(standalone URDF 里
+  world->base_link 是 identity,不等于 Gazebo 的 spawn 高度,不代表桌面);
+  之前 RViz 3D 视图空白;`view:=true` 可自动开 rqt_image_view 看腕部相机
+
+### 多物体视觉识别抓取(2026-10-30)
+- 桌面新增 3 个物体(带 odometry):`blue_cube` 0.07 立方 `(0.26,-0.16)`,
+  `green_cylinder` r0.04 h0.10 `(0.15,0.11)`, `yellow_box`
+  0.10x0.075x0.07 `(0.25,0.16)`;原 `target_ball` 保留(标签 red_ball)
+- 新增 `scripts/arm_bench_object_detector.py`:HSV 颜色分割 -> 标签
+  (`red_ball/blue_cube/green_cylinder/yellow_box`),发布
+  `/arm/vision/detections`(Detection2DArray,class_id=标签,pose.z=深度)和
+  `/arm/vision/image_annotated`;30Hz,四物体稳定检出
+- `arm_bench_visual_grasp.py` 改为 `target_class` 选择抓取:球用 bbox+深度+
+  半径补球心;方块/圆柱用最近深度区域(顶面)求顶心,z 用已知半高(物体都在
+  桌面上);抓取前先把桌子+全部物体加入 planning scene,再移动观察位
+- 关键坑:
+  - 夹爪简化模型的 q=0 原来闭口还有 6.8cm,夹不住 7cm 球;把
+    `build_arm_model.py` 手指基距改为 ±1.5cm(闭口内距 ~1.8cm)
+  - 工具朝下在 Link7 z<0.19 时 IK/跟踪明显变差(z=0.161 卡在 4.7cm 外),
+    抓取点定在 z≈0.20;预抓取用 z≈0.30(太高 0.35 规划失败)
+  - 夹爪开 0.09 会扫到旁边物体;接近时 open=0.04
+  - 圆柱按 bbox 中心取深度会打到侧面(中心偏 3.6cm);改用最近深度顶面
+  - 物体要分开放(球与邻物 y 间距 ≥0.16),否则张开的手指会碰到
+  - 闭合要按物体宽度限制(圆柱 close 0.028、黄盒 0.025),直接闭到 0 会把
+    物体挤飞
+  - 观察位第一次 MoveIt 规划偶尔失败,脚本里已加重试
+- 实测四类全部成功:red_ball 0.635->0.807, blue_cube 0.635->0.809,
+  green_cylinder 0.650->0.828, yellow_box 0.635->0.816
+
+### 自然语言交互(2026-10-30)
+- 新增 `scripts/arm_bench_language.py`:中文规则解析 REPL;支持 `抓X`、
+  `把X放到Y上/旁边`、`桌上有什么`、多步(`然后/再/接着/；`)、`帮助`、
+  `停止`、`结束了`;执行前显示解析并确认(y/N,默认 N)
+- 物体别名:红球/蓝方块/绿圆柱/黄盒子;颜色只认红蓝绿黄
+- 抓放扩展到 `arm_bench_visual_grasp.py`:`place_class`、`place_mode`
+  (on_top|beside)、`place_offset`(旁边边到边 3cm)、`place_clearance`;
+  先高路径搬运,再垂直下放,张开夹爪后抬起,用 odometry 校验
+- “放到旁边”在目标周围按 8 个方向找空位,检查桌面边界(含被抓物半径)、
+  其它物体间距;实测 red_ball 旁放 yellow_box:base (0.245,0.046,0.035)
+- 多步实测:红球放到黄盒旁边 -> 蓝方块叠到黄盒上;两条都成功,
+  蓝方块最终 base z=0.105(黄盒顶 0.07 + 半高 0.035)
+- 注意:球体叠放到平面上(如红球放黄盒顶)机构上能放,但几秒后会滚落;
+  REPL 会提示。需要稳定叠放用方块/圆柱(平底),或说“放到旁边”
+- 关键坑:standalone URDF 里已有 world->base_link identity,launch 里再发
+  world->base_link=0.6 会造成 TF 冲突(查询/放置位置随机变成世界系);
+  已删除该静态 TF,odom 世界系用 `world_offset`(默认 `0 0 0.6 0`)手动换算
+- 需要先运行 sim + MoveIt + `arm_bench_object_detector.py`;语言脚本会
+  用子进程逐个执行动作,失败即停
+
+### 纯视觉 + 装配模型 MoveIt + 一键启动(2026-10-30)
+- MoveIt 改用装配 URDF(RM75+D435i+AG95):
+  - `arm_bench.launch.py` 生成装配 URDF(去掉 Gazebo world link)写到
+    `/tmp/arm_bench_moveit.urdf`
+  - `arm_moveit.launch.py` 读这份 URDF,SRDF = rm_75 SRDF + 相机/夹爪固定
+    连接 disable 对;move_group/RViz 都用装配模型(28 links)
+  - 必须先启动 arm_bench 再 arm_moveit;诊断:抓取位/预抓取位
+    `/check_state_validity` valid,`/compute_cartesian_path` fraction 1.0
+- 抓取脚本去掉了所有 odom 位置依赖:
+  - 6 个观察位扫描 + 缺目标补扫;默认观察位最后;两轮找不到就停止
+  - 球用半径/桌面先验;方块/圆柱用颜色 mask 内的顶面深度(支撑物 bbox
+    里有上层物体时不会取错顶面)
+  - MoveIt 下探前只移除被抓目标,`avoid_collisions=True`;按类别 open,
+    释放时只张开到物体宽度;放完用相机复检
+  - 球的 velocity_decay 提到 2.0,减少扫描到抓取之间滚走
+- 一键启动 `scripts/start_arm_bench.sh`:
+  - 默认 Gazebo GUI + 机械臂 RViz + 相机窗口 + MoveIt + 检测 + 语言前台
+  - `--headless` / `--moveit-rviz` / `--no-build`;日志 `/tmp/arm_bench_*.log`
+  - 输入"结束了"统一清理;已用 --headless 实测启动/退出
+- 实测:
+  - 语言多步"红球放黄盒旁边 -> 蓝方块放黄盒上"跑通;
+    视觉校验 (0.239,0.043,0.020) / (0.223,0.159,0.105)
+  - 扫描能看到 4 个物体;蓝/绿/黄约 1cm,红球 1~2cm
+  - 之前 Cartesian 停在 7.3cm 外,根因是预抓取视觉修正后的斜向下探 +
+    张爪过宽提升;改垂直下探 + 按宽度释放后 fraction 1.0
+- 待办:
+  - 扫描目前无条件走完 6 个位,默认位已经能看到全部物体;下一步改成
+    lazy(默认位优先,缺目标再环顾),减少无效运动
+  - 相机与本体在放置阶段仍偶发物理碰撞;下一步用 --moveit-rviz 查碰撞对,
+    给相机支架补 collision / 加 attached collision object,并检查 JTC 跟踪
+  - 球体叠放不稳定;建议方块/圆柱叠放或放旁边
+  - RViz 不是 Gazebo 世界:A 的 RViz 是相机点云/图,MoveIt RViz 是扫描
+    collision objects;布局不一致是数据源不同,不是 Gazebo 布局变了
 
 ### RealSense D435i 真机视觉环境(2026-09-29)
 - 驱动/SDK 用 apt 装(与 third_party 归档同版本,无需编译):

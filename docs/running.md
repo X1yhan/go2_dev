@@ -284,6 +284,7 @@ cd ~/go2_dev && source scripts/setup_env.sh
 ros2 launch go2_description arm_bench.launch.py                 # Gazebo GUI
 ros2 launch go2_description arm_bench.launch.py use_gui:=false  # 无界面
 ros2 launch go2_description arm_bench.launch.py rviz:=true      # + RViz
+ros2 launch go2_description arm_bench.launch.py view:=true      # + 相机画面窗口
 ```
 
 需要 MoveIt2 时另开终端:
@@ -318,33 +319,93 @@ ros2 launch go2_description arm_moveit.launch.py
 `start_forward:=true` 到 `forward` 姿态。深度图背景为 `-inf`,
 算法里先过滤 `np.isfinite`。
 
-### 简单视觉抓取
-
-流程:观察位 -> 红色小球检测(HSV)-> 深度反投影 -> TF 到 `base_link`
--> MoveIt 预抓取/下探 -> 夹爪闭合 -> 抬起 -> 球 odometry 校验。
+交互式运动(不用写程序,另开终端):
 
 ```bash
-# 终端 A:机械臂仿真
-ros2 launch go2_description arm_bench.launch.py rviz:=true
+cd ~/go2_dev && source scripts/setup_env.sh
 
-# 终端 B:MoveIt
-source ~/rm_ws/install/setup.bash
-ros2 launch go2_description arm_moveit.launch.py
-
-# 终端 C:视觉抓取
-source ~/rm_ws/install/setup.bash
-ros2 run go2_description arm_bench_visual_grasp.py
-
-# 只检测不抓
-ros2 run go2_description arm_bench_visual_grasp.py --ros-args -p detect_only:=true
+# 键盘示教:1..7 选关节,w/s 正负转,+/- 调步长,g 夹爪,0 零位,f forward,p 状态,q 退出
+ros2 run go2_description arm_bench_teleop.py
 ```
 
-- 观察位默认 `Link7=(0.34, 0, 0.30)`,工具轴朝下
-- 可调参数:`observe_xyz`、`ball_radius`(0.035)、`grip_offset`(0.18)、
-  `pre_offset`(0.08)、`lift_offset`(0.18)、`open/close`、`detect_only`
-- 调试:`/arm/visual_grasp/debug_image`、`/arm/visual_grasp/marker`
-- 实测:`BALL_BASE (0.219, 0, 0.035)`,抓取后球 z `0.635 -> 0.814`
-- 这是单次检测 + 开环抓取;仿真已知 TF,不需要手眼标定
+笛卡尔点动可用 MoveIt2 的 RViz MotionPlanning 拖动末端后 Plan & Execute;
+想要滑条式示教器可装 `ros-humble-rqt-joint-trajectory-controller`,运行
+`ros2 run rqt_joint_trajectory_controller rqt_joint_trajectory_controller`,
+选 `/controller_manager` + `rm_group_controller`。
+
+### 多物体识别与纯视觉抓放
+
+桌面有 4 个彩色物体(红球/蓝方块/绿圆柱/黄盒子)。检测节点识别标签,抓取
+脚本用相机+深度+TF 扫描定位和抓放;**不使用物体 odometry**。
+
+```bash
+# 终端 A:机械臂仿真(先启动)
+ros2 launch go2_description arm_bench.launch.py rviz:=true view:=true
+# 终端 B:MoveIt(必须在 A 之后,用装配 URDF)
+source ~/rm_ws/install/setup.bash
+ros2 launch go2_description arm_moveit.launch.py
+# 终端 C:检测
+ros2 run go2_description arm_bench_object_detector.py
+# 终端 D:扫描+抓取
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description arm_bench_visual_grasp.py --ros-args -p target_class:=blue_cube
+
+# 只扫描(不抓)
+ros2 run go2_description arm_bench_visual_grasp.py --ros-args -p scan_only:=true
+```
+
+- 扫描 6 个观察位(默认位最后),两轮仍找不到就停止
+- 球用桌面先验;方块/圆柱用颜色 mask 内的顶面深度;相机 TF 到 base_link
+- MoveIt 用装配模型(含相机/夹爪);下探前把目标物从 scene 移除
+- 参数:`target_class`、`grip_offset`(-1=类别默认)、`pre_offset`、`lift_offset`、
+  `open`(-1=类别默认)、`close`(-1=类别默认)、`place_class`、`place_mode`
+  (on_top/beside)、`place_offset`(0.03)、`place_clearance`、`scan_only`、`detect_only`
+- 放完用相机复检;球是球体,叠到平面上会滚;建议方块/圆柱叠放或放旁边
+- 语言/一键启动见下一节
+
+### 自然语言交互
+
+终端输入中文,解析后**先显示计划、确认才执行**;持续接收指令,说“结束了”退出。
+
+一键启动(单终端):
+
+```bash
+cd ~/go2_dev
+scripts/start_arm_bench.sh
+# --headless 无界面 / --moveit-rviz 用 MoveIt RViz / --no-build 跳过编译
+```
+
+脚本启动 Gazebo + 机械臂 RViz + 相机窗口 + MoveIt + 检测,然后把语言终端放在
+前台;输入“结束了”后全部后台进程停止。日志:
+`/tmp/arm_bench_{sim,moveit,detector}.log`。
+
+手动分终端(可选):先启动 arm_bench + arm_moveit + arm_bench_object_detector,
+再运行 `ros2 run go2_description arm_bench_language.py`。
+
+```text
+指令> 把红球放到黄盒子旁边
+解析结果:
+1. 抓取 红球(red_ball) → 放到 黄盒子(yellow_box) 旁边(3cm 空位)
+确认执行? [y/N] y
+...
+完成。
+指令> 抓红球放到黄盒子上,然后抓蓝方块放到绿圆柱旁边
+解析结果:
+1. 抓取 红球(red_ball) → 放到 黄盒子(yellow_box) 上方(堆叠)
+2. 抓取 蓝方块(blue_cube) → 放到 绿圆柱(green_cylinder) 旁边(3cm 空位)
+确认执行? [y/N]
+指令> 桌上有什么
+指令> 结束了
+```
+
+规则:
+
+- 多步用 `然后/再/接着/；`;句内逗号不影响“抓X,放到Y”
+- 确认词:`y/yes/是/确认/执行/可以`;直接回车或其它=取消
+- 物体别名:红球、蓝方块、绿圆柱、黄盒子;只认红/蓝/绿/黄
+- “放到旁边”自动在目标周围找 3cm 边到边空位;“放到上面”仅支持方块/黄盒子
+- 球体叠放到平面上可能滚落,REPL 会提示;稳定叠放请用方块或改“旁边”
+- 某一步失败会停止并报告;单独“抓X”会把物体留在夹爪里
 
 ## 3. 视觉仿真(vision_sim)
 

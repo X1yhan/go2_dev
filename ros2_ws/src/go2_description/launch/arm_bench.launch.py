@@ -12,6 +12,7 @@ Usage:
 import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import (get_package_prefix,
                                          get_package_share_directory)
@@ -33,6 +34,18 @@ DEFAULT_GRIPPER = 'ag95'
 DEFAULT_WORLD_NAME = 'arm_bench'
 MODEL_NAME = 'arm_bench'
 CAMERA_TOPIC = '/arm/camera'
+
+
+
+def _strip_world(urdf_text):
+    """Return the assembled URDF with the Gazebo world link/joint removed."""
+    root = ET.fromstring(urdf_text)
+    for child in list(root):
+        if child.tag == 'link' and child.get('name') == 'world':
+            root.remove(child)
+        elif child.tag == 'joint' and child.get('name') == 'world_joint':
+            root.remove(child)
+    return ET.tostring(root, encoding='unicode')
 
 
 def _repo_root(pkg_share):
@@ -172,6 +185,10 @@ def generate_launch_description():
 
         result = subprocess.run(command, capture_output=True, text=True,
                                 check=True)
+        moveit_urdf_path = _arg(context, 'moveit_urdf')
+        if moveit_urdf_path:
+            with open(os.path.expanduser(moveit_urdf_path), 'w') as fh:
+                fh.write(_strip_world(result.stdout))
         urdf = _gz_robot_description(
             result.stdout, pkg_share, gripper, camera,
             _arg(context, 'camera_width'), _arg(context, 'camera_height'),
@@ -213,6 +230,12 @@ def generate_launch_description():
                 f'{CAMERA_TOPIC}/points@sensor_msgs/msg/PointCloud2'
                 '[ignition.msgs.PointCloudPacked',
                 '/model/target_ball/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
+                '/model/blue_cube/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
+                '/model/green_cylinder/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
+                '/model/yellow_box/odometry@nav_msgs/msg/Odometry'
                 '[ignition.msgs.Odometry',
             ]
             nodes.append(TimerAction(period=2.0, actions=[
@@ -266,12 +289,22 @@ def generate_launch_description():
                               description='Start the Gazebo GUI'),
         DeclareLaunchArgument('rviz', default_value='false',
                               description='Start RViz2 with the arm/camera view'),
+        DeclareLaunchArgument('view', default_value='false',
+                              description='Start rqt_image_view on the wrist '
+                                          'camera feed'),
+        DeclareLaunchArgument('view_topic',
+                              default_value=CAMERA_TOPIC + '/image',
+                              description='Topic shown by rqt_image_view'),
         DeclareLaunchArgument(
             'world',
             default_value=os.path.join(pkg_share, 'worlds', 'arm_bench.sdf'),
             description='Gazebo world with the cube table'),
         DeclareLaunchArgument('gz_world_name', default_value=DEFAULT_WORLD_NAME,
                               description='World name inside the SDF'),
+        DeclareLaunchArgument(
+            'moveit_urdf', default_value='/tmp/arm_bench_moveit.urdf',
+            description='Assembled URDF (without world link) written for '
+                        'arm_moveit.launch.py'),
         DeclareLaunchArgument('spawn_x', default_value='0'),
         DeclareLaunchArgument('spawn_y', default_value='0'),
         DeclareLaunchArgument('spawn_z', default_value='0.6',
@@ -331,7 +364,9 @@ def generate_launch_description():
         Node(
             package='ros_gz_bridge',
             executable='parameter_bridge',
-            arguments=['/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock'],
+            arguments=['/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock',
+                       ['/world/', LaunchConfiguration('gz_world_name'),
+                        '/set_pose@ros_gz_interfaces/srv/SetEntityPose']],
             output='screen',
         ),
         OpaqueFunction(function=_robot_nodes),
@@ -357,6 +392,13 @@ def generate_launch_description():
             package='go2_description',
             executable='arm_bench_home.py',
             condition=IfCondition(LaunchConfiguration('start_forward')),
+            output='screen',
+        ),
+        Node(
+            package='rqt_image_view',
+            executable='rqt_image_view',
+            arguments=[LaunchConfiguration('view_topic')],
+            condition=IfCondition(LaunchConfiguration('view')),
             output='screen',
         ),
     ])

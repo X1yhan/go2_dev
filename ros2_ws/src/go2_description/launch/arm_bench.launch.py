@@ -48,6 +48,16 @@ def _strip_world(urdf_text):
     return ET.tostring(root, encoding='unicode')
 
 
+def _strip_camera_collisions(urdf_text):
+    """Temporarily drop camera collision geometry (camera mount debugging)."""
+    root = ET.fromstring(urdf_text)
+    for link in root.findall('link'):
+        if link.get('name', '').startswith('camera'):
+            for collision in link.findall('collision'):
+                link.remove(collision)
+    return ET.tostring(root, encoding='unicode')
+
+
 def _repo_root(pkg_share):
     return os.path.abspath(os.path.join(
         pkg_share, '..', '..', '..', '..', '..'))
@@ -130,6 +140,21 @@ def _gz_robot_description(urdf, pkg_share, gripper, camera, width, height,
         if f'name="{link}"' in urdf)
 
     extra = ''.join(ros2_control) + plugin + gravity_off
+    if gripper != 'none':
+        # Keep the grasped target rigidly attached to the gripper while the
+        # arm moves.  The DetachableJoint is released again at place time.
+        extra += (
+            '<gazebo>'
+            '<plugin filename="ignition-gazebo-detachable-joint-system" '
+            'name="ignition::gazebo::systems::DetachableJoint">'
+            '<parent_link>gripper_base_link</parent_link>'
+            '<child_model>target_ball</child_model>'
+            '<child_link>link</child_link>'
+            '<detach_topic>/target_ball/detach</detach_topic>'
+            '<attach_topic>/target_ball/attach</attach_topic>'
+            '<output_topic>/target_ball/state</output_topic>'
+            '</plugin></gazebo>'
+        )
     if camera != 'none':
         extra += _sensor_xml(width, height, fps, hfov, near, far, visualize)
     return urdf.replace('</robot>', extra + '</robot>')
@@ -188,9 +213,10 @@ def generate_launch_description():
         moveit_urdf_path = _arg(context, 'moveit_urdf')
         if moveit_urdf_path:
             with open(os.path.expanduser(moveit_urdf_path), 'w') as fh:
-                fh.write(_strip_world(result.stdout))
+                fh.write(_strip_world(_strip_camera_collisions(result.stdout)))
         urdf = _gz_robot_description(
-            result.stdout, pkg_share, gripper, camera,
+            _strip_camera_collisions(result.stdout),
+            pkg_share, gripper, camera,
             _arg(context, 'camera_width'), _arg(context, 'camera_height'),
             _arg(context, 'camera_fps'), _arg(context, 'camera_hfov'),
             _arg(context, 'camera_clip_near'),

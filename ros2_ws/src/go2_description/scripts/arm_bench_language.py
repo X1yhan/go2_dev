@@ -252,7 +252,7 @@ class Shell:
             params += [
                 '-p', 'place_class:=%s' % action['place'],
                 '-p', 'place_mode:=%s' % action['mode'],
-                '-p', 'place_offset:=0.03',
+                '-p', 'place_offset:=0.05',
             ]
         cmd = ['ros2', 'run', 'go2_description',
                'arm_bench_visual_grasp.py'] + params

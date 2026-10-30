@@ -17,6 +17,7 @@ Usage:
         --ros-args -p target_class:=green_cylinder -p detect_only:=true
 """
 import math
+import subprocess
 import sys
 import time
 
@@ -27,12 +28,15 @@ import tf2_geometry_msgs
 import tf2_ros
 from control_msgs.action import FollowJointTrajectory
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Point, PointStamped, Pose, Quaternion
+from geometry_msgs.msg import (Point, PointStamped, Pose, PoseStamped,
+                               Quaternion)
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (BoundingVolume, CollisionObject, Constraints,
-                             OrientationConstraint, PlanningScene,
-                             PositionConstraint)
-from moveit_msgs.srv import ApplyPlanningScene, GetCartesianPath
+                             JointConstraint, OrientationConstraint,
+                             PlanningScene, PositionConstraint,
+                             PositionIKRequest, RobotState)
+from moveit_msgs.srv import (ApplyPlanningScene, GetCartesianPath,
+                             GetPositionIK)
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -51,17 +55,24 @@ from visualization_msgs.msg import Marker
 ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4',
               'joint5', 'joint6', 'joint7']
 GRIPPER_JOINTS = ['gripper_finger1_joint', 'gripper_finger2_joint']
-DOWN_Q = (1.0, 0.0, 0.0, 0.0)   # 180 deg about X: tool +Z points down
-DEFAULT_OBSERVE = (0.34, 0.0, 0.32)
-SCAN_POSES = [
+# Tool points down, rotated 180 deg about the tool axis.  The camera is on
+# the side away from Link2; yaw search showed 135/180/225/270/315 are
+# collision-free, but only 180 keeps all four objects in the default view.
+DOWN_Q = (0.0, -1.0, 0.0, 0.0)
+DEFAULT_OBSERVE = (0.22, 0.0, 0.38)
+ABOVE_Z = 0.38
+# The fingers reach about +/-0.075 m from the TCP.  Keep the whole gripper,
+# not just the held object, clear of other objects when choosing a spot.
+GRIPPER_SAFETY_R = 0.08
+PLACE_AREA_LOOK = (0.24, 0.20, 0.34)
+LOOK_POSES = [
     (0.34, 0.16, 0.33),
     (0.34, -0.16, 0.33),
     (0.24, 0.20, 0.34),
     (0.24, -0.20, 0.34),
     (0.16, 0.00, 0.36),
-    DEFAULT_OBSERVE,
 ]
-SCAN_POSES_2 = [
+LOOK_POSES_2 = [
     (0.30, 0.08, 0.32),
     (0.30, -0.08, 0.32),
     (0.20, 0.12, 0.35),
@@ -107,14 +118,14 @@ class VisualGrasp(Node):
         self.declare_parameter('detections_topic', '/arm/vision/detections')
         self.declare_parameter('ball_radius', 0.035)
         self.declare_parameter('grip_offset', -1.0)
-        self.declare_parameter('pre_offset', 0.10)
+        self.declare_parameter('pre_offset', 0.06)
         self.declare_parameter('lift_offset', 0.18)
         self.declare_parameter('open', 0.06)
         self.declare_parameter('close', -1.0)
         self.declare_parameter('detect_only', False)
         self.declare_parameter('place_class', '')
         self.declare_parameter('place_mode', 'on_top')
-        self.declare_parameter('place_offset', 0.03)
+        self.declare_parameter('place_offset', 0.05)
         self.declare_parameter('place_clearance', 0.0)
         self.declare_parameter('scan_only', False)
 
@@ -167,6 +178,8 @@ class VisualGrasp(Node):
         self._observations = {}
         self.joint_positions = {}
         self._last_detect_warn = 0.0
+        self._trace_fingers = False
+        self._finger_trace = []
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -213,6 +226,19 @@ class VisualGrasp(Node):
 
     def on_joint_state(self, msg):
         self.joint_positions.update(dict(zip(msg.name, msg.position)))
+        if self._trace_fingers:
+            self._finger_trace.append((
+                time.time(),
+                *[self.joint_positions.get(j, -1.0)
+                  for j in GRIPPER_JOINTS]))
+
+    def _step(self, message):
+        self.get_logger().info('[STEP] %s' % message)
+
+    def _settle(self, seconds):
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.02)
 
     def _log_geometry(self, tag):
         try:
@@ -269,8 +295,8 @@ class VisualGrasp(Node):
         req.group_name = 'rm_group'
         req.num_planning_attempts = 20
         req.allowed_planning_time = 8.0
-        req.max_velocity_scaling_factor = 0.1
-        req.max_acceleration_scaling_factor = 0.1
+        req.max_velocity_scaling_factor = 0.05
+        req.max_acceleration_scaling_factor = 0.05
         region = BoundingVolume()
         sphere = SolidPrimitive()
         sphere.type = SolidPrimitive.SPHERE
@@ -298,7 +324,96 @@ class VisualGrasp(Node):
         req.goal_constraints.append(constraints)
         return self.send(self.move, goal, 1)
 
-    def cartesian(self, waypoints, avoid_collisions=True):
+    def move_to_joint(self, positions):
+        goal = MoveGroup.Goal()
+        req = goal.request
+        req.group_name = 'rm_group'
+        req.num_planning_attempts = 20
+        req.allowed_planning_time = 8.0
+        req.max_velocity_scaling_factor = 0.05
+        req.max_acceleration_scaling_factor = 0.05
+        constraints = Constraints()
+        for name, value in zip(ARM_JOINTS, positions):
+            joint = JointConstraint()
+            joint.joint_name = name
+            joint.position = float(value)
+            joint.tolerance_above = 0.01
+            joint.tolerance_below = 0.01
+            joint.weight = 1.0
+            constraints.joint_constraints.append(joint)
+        req.goal_constraints.append(constraints)
+        return self.send(self.move, goal, 1)
+
+    def _compute_ik(self, target, seeds=None):
+        cli = self.create_client(GetPositionIK, '/compute_ik')
+        if not cli.wait_for_service(timeout_sec=5):
+            return None
+        current = [float(self.joint_positions.get(j, 0.0))
+                   for j in ARM_JOINTS]
+        if seeds is None:
+            seeds = [
+                current,
+                [0.0, 0.8395, 0.0, 1.4442, 0.0, 0.8513, 0.0],  # forward
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],             # zero
+            ]
+            # Also seed around the current posture so the IK solver can
+            # return a nearby branch instead of a far wrist/elbow flip.
+            for index in range(len(ARM_JOINTS)):
+                for delta in (0.3, -0.3, 0.8, -0.8):
+                    seed = list(current)
+                    seed[index] += delta
+                    seeds.append(seed)
+        best = None
+        best_cost = float('inf')
+        for seed in seeds:
+            req = PositionIKRequest()
+            req.group_name = 'rm_group'
+            req.ik_link_name = TIP_LINK
+            req.avoid_collisions = False
+            req.timeout.sec = 1
+            ps = PoseStamped()
+            ps.header.frame_id = BASE_FRAME
+            ps.pose = self._pose(target)
+            req.pose_stamped = ps
+            rs = RobotState()
+            js = JointState()
+            js.name = ARM_JOINTS + GRIPPER_JOINTS
+            js.position = [float(v) for v in seed] + \
+                [self.open_q, self.open_q]
+            rs.joint_state = js
+            req.robot_state = rs
+            future = cli.call_async(GetPositionIK.Request(ik_request=req))
+            rclpy.spin_until_future_complete(self, future, timeout_sec=10)
+            res = future.result()
+            if res is None or not res.solution.joint_state.name:
+                continue
+            solution = dict(zip(res.solution.joint_state.name,
+                                res.solution.joint_state.position))
+            sol = [float(solution.get(j, 0.0)) for j in ARM_JOINTS]
+            cost = 0.0
+            for i in range(len(ARM_JOINTS)):
+                diff = sol[i] - current[i]
+                if ARM_JOINTS[i] == 'joint7':
+                    diff = (diff + math.pi) % (2.0 * math.pi) - math.pi
+                cost += abs(diff)
+            if cost < best_cost:
+                best, best_cost = sol, cost
+        if best is not None:
+            self.get_logger().info(
+                'IK pre-grasp joint delta=%.3f rad' % best_cost)
+        return best
+
+    def _joint_move(self, positions, seconds=4.0):
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory.joint_names = ARM_JOINTS
+        point = JointTrajectoryPoint()
+        point.positions = [float(v) for v in positions]
+        point.time_from_start.sec = int(seconds)
+        goal.trajectory.points = [point]
+        return self.send(self.arm, goal, 0)
+
+    def cartesian(self, waypoints, avoid_collisions=True,
+                  start_positions=None, execute=True):
         cli = self.create_client(GetCartesianPath, '/compute_cartesian_path')
         if not cli.wait_for_service(timeout_sec=10):
             return False, 0.0
@@ -309,9 +424,17 @@ class VisualGrasp(Node):
         req.max_step = 0.005
         req.jump_threshold = 0.0
         req.avoid_collisions = avoid_collisions
-        req.max_velocity_scaling_factor = 0.1
-        req.max_acceleration_scaling_factor = 0.1
+        req.max_velocity_scaling_factor = 0.05
+        req.max_acceleration_scaling_factor = 0.05
         req.waypoints = [self._pose(w) for w in waypoints]
+        if start_positions is not None:
+            rs = RobotState()
+            js = JointState()
+            js.name = ARM_JOINTS + GRIPPER_JOINTS
+            js.position = [float(v) for v in start_positions] + \
+                [self.open_q, self.open_q]
+            rs.joint_state = js
+            req.start_state = rs
         future = cli.call_async(req)
         rclpy.spin_until_future_complete(self, future, timeout_sec=10)
         res = future.result()
@@ -351,6 +474,18 @@ class VisualGrasp(Node):
             'TCP settle failed: target %s, error %.3f m' %
             (target, last_err))
         return False
+
+    def _detachable(self, action):
+        topic = '/target_ball/%s' % action
+        try:
+            subprocess.run(
+                ['ign', 'topic', '-t', topic,
+                 '-m', 'ignition.msgs.Empty', '-p', 'unused: true'],
+                check=True, capture_output=True, timeout=5)
+            self._step('target_ball %s' % action)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warn(
+                'detachable %s failed: %s' % (action, exc))
 
     def grip_to(self, q):
         goal = FollowJointTrajectory.Goal()
@@ -490,26 +625,34 @@ class VisualGrasp(Node):
                 self.seen.get(self.place_class))
 
     def _free_beside_spot(self, center):
+        held_r = max(self._footprint_radius(self.cfg), GRIPPER_SAFETY_R)
         distance = (self._footprint_radius(self.place_cfg) +
-                    self._footprint_radius(self.cfg) + self.place_offset)
+                    held_r + self.place_offset)
         for deg in (0, 90, -90, 45, -45, 135, -135, 180):
             angle = math.radians(deg)
             x = center[0] + distance * math.cos(angle)
             y = center[1] + distance * math.sin(angle)
-            held_r = self._footprint_radius(self.cfg)
             if not (0.10 <= x <= 0.29 - held_r and
                     -0.29 + held_r <= y <= 0.29 - held_r):
                 continue
             free = True
+            nearest = None
+            nearest_d = None
             for name, p in self.seen.items():
                 if name in (self.place_class, self.target_class):
                     continue
                 need = (self._footprint_radius(OBJECTS[name]) +
-                        self._footprint_radius(self.cfg) + 0.02)
-                if math.hypot(x - p[0], y - p[1]) < need:
+                        GRIPPER_SAFETY_R + 0.02)
+                d = math.hypot(x - p[0], y - p[1])
+                if nearest_d is None or d < nearest_d:
+                    nearest_d, nearest = d, name
+                if d < need:
                     free = False
                     break
             if free:
+                self.get_logger().info(
+                    'beside spot (%.3f, %.3f), clearance to %s %.3f m' %
+                    (x, y, nearest or 'none', nearest_d or 0.0))
                 return (x, y)
         return None
 
@@ -542,24 +685,30 @@ class VisualGrasp(Node):
                          self.grip_offset + self.place_clearance)
             expected_z = self.cfg['half_height']
             desc = '%s beside' % self.place_class
-        cur = self._tcp()
-        if cur is None:
-            self.get_logger().error('no TCP transform for placing')
-            return False
-        safe_z = max(cur.z, release_z + 0.06, 0.36)
         release = (x, y, release_z)
+        above = (x, y, ABOVE_Z)
+        self._step('搬运到放置点上方 %s' % (above,))
+        self.get_logger().info('moving above place %s' % (above,))
+        self._finger_trace.clear()
+        self._trace_fingers = True
+        try:
+            above_ok = self.move_to(above)
+        finally:
+            self._trace_fingers = False
+        if self._finger_trace:
+            f1 = [s[1] for s in self._finger_trace]
+            f2 = [s[2] for s in self._finger_trace]
+            self._step('搬运中手指: f1=%.4f..%.4f, f2=%.4f..%.4f' %
+                       (min(f1), max(f1), min(f2), max(f2)))
+        if not above_ok:
+            self.get_logger().error('above-place move failed')
+            return False
+        self._wait_tcp(above, timeout=8.0, tol=0.02)
+        self._step('已到达放置点上方')
         self.get_logger().info(
             'placing %s -> %s at base (%.3f, %.3f, %.3f)' %
             (self.target_class, desc, x, y, release_z))
-        ok, fraction = self.cartesian([
-            (cur.x, cur.y, safe_z), (x, y, safe_z), release])
-        if not ok:
-            self.get_logger().warn(
-                'Cartesian place approach %.2f, fallback MoveIt' % fraction)
-            if not self.move_to((x, y, safe_z)):
-                self.get_logger().error('place pre-pose failed')
-                return False
-            ok, fraction = self.cartesian([release])
+        ok, fraction = self.cartesian([release])
         if not ok or not self._wait_tcp(release, timeout=10.0, tol=0.015):
             self.get_logger().error(
                 'arm did not reach place pose; object still held')
@@ -571,12 +720,15 @@ class VisualGrasp(Node):
         else:
             held_width = max(self.cfg['dims'][0], self.cfg['dims'][1])
         release_q = max(0.0, (held_width - 0.012) / 2.0)
+        self._step('夹爪释放 (q=%.3f, 宽度 %.3f)' % (release_q, held_width))
         self.get_logger().info(
             'opening gripper to release (q=%.3f, width %.3f)'
             % (release_q, held_width))
         self.grip_to(release_q)
+        if self.target_class == 'red_ball':
+            self._detachable('detach')
         time.sleep(0.8)
-        lift = (x, y, release_z + 0.10)
+        lift = (x, y, ABOVE_Z)
         ok_lift, fraction = self.cartesian([lift])
         if not ok_lift:
             self.get_logger().warn(
@@ -590,7 +742,7 @@ class VisualGrasp(Node):
         if placed is None:
             self.get_logger().warn(
                 'placed object not visible here, moving to verify pose')
-            if self.move_to(SCAN_POSES[0]) and self._fresh_frame():
+            if self.move_to(DEFAULT_OBSERVE) and self._fresh_frame():
                 placed = self.detect_label(self.target_class,
                                            table_prior=False)
         if placed is None:
@@ -602,6 +754,9 @@ class VisualGrasp(Node):
         err_z = abs(p[2] - expected_z)
         err_xy = math.hypot(p[0] - x, p[1] - y)
         success = err_z < 0.025 and err_xy < 0.035
+        self._step('放置视觉复检: %s, base=(%.3f, %.3f, %.3f), '
+                   'expected_z=%.3f' % (self.target_class, p[0], p[1], p[2],
+                                        expected_z))
         self.get_logger().info(
             'PLACE %s %s -> %s: visual base (%.3f, %.3f, %.3f), '
             'expected z=%.3f, err_xy=%.3f' %
@@ -814,21 +969,57 @@ class VisualGrasp(Node):
                 'scan pose %s: %s' %
                 (pose, ','.join(sorted(detections)) if detections else 'none'))
 
+    def _capture_current(self):
+        if not self._fresh_frame():
+            return {}
+        detections = self._detect_all()
+        for label, result in detections.items():
+            point, _, area = result
+            self._observations.setdefault(label, []).append(
+                (point, area, 0))
+            self.reference_seen[label] = point
+        self._fuse_observations()
+        if detections:
+            self.set_scene()
+        return detections
+
     def scan_scene(self, required=None):
-        self.get_logger().info('scanning tabletop ...')
-        self._scan_pass(SCAN_POSES, first_pass=True)
+        # Lazy scan: look at the default observation first.  Only move to the
+        # other viewpoints when a required object is missing.
+        self.get_logger().info('looking at default observation ...')
+        if self.move_to(DEFAULT_OBSERVE):
+            detections = self._capture_current()
+            self.get_logger().info(
+                'default view: %s' %
+                (','.join(sorted(detections)) if detections else 'none'))
+            if required is None:
+                if detections:
+                    return True
+            elif all(label in self.seen for label in required):
+                if (not (self.scan_only or self.detect_only) and
+                        self.place_mode == 'beside'):
+                    self.get_logger().info(
+                        'checking place area for nearby obstacles ...')
+                    self._scan_pass([PLACE_AREA_LOOK], first_pass=True)
+                return True
+        else:
+            self.get_logger().warn(
+                'default observation unreachable; looking around')
+        self.get_logger().info(
+            'required object(s) missing at default, looking around ...')
+        self._scan_pass(LOOK_POSES, first_pass=True)
         missing = [label for label in (required or [])
                    if label not in self.seen]
         if missing:
             self.get_logger().warn(
-                'not found in first pass: %s; looking again'
-                % ','.join(missing))
-            self._scan_pass(SCAN_POSES_2)
+                'not found yet: %s; looking again' % ','.join(missing))
+            self._scan_pass(LOOK_POSES_2)
         missing = [label for label in (required or [])
                    if label not in self.seen]
         if missing:
             self.get_logger().error(
-                'objects not in view after scanning: %s' % ','.join(missing))
+                'objects not in view after scanning: %s' %
+                ','.join(missing))
             return False
         return True
 
@@ -867,6 +1058,8 @@ class VisualGrasp(Node):
         target = (self.reference_seen.get(self.target_class) or
                   self.first_seen.get(self.target_class) or
                   self.seen[self.target_class])
+        self._step('观察位扫描完成, 可见物体: %s' %
+                   ','.join(sorted(self.seen)))
         self.get_logger().info(
             'TARGET %s (camera) base=(%.3f, %.3f, %.3f)' %
             (self.target_class, target[0], target[1], target[2]))
@@ -883,27 +1076,30 @@ class VisualGrasp(Node):
                 'PLACE TARGET %s (camera) base=(%.3f, %.3f, %.3f)' %
                 (self.place_class, pc[0], pc[1], pc[2]))
 
-        self.set_scene()
+        self._step('夹爪打开 (q=%.3f)' % self.open_q)
         self.get_logger().info('opening gripper')
         self.grip_to(self.open_q)
         pre = (target[0], target[1],
                target[2] + self.grip_offset + self.pre_offset)
         grasp = (target[0], target[1], target[2] + self.grip_offset)
-        lift = (target[0], target[1],
-                target[2] + self.grip_offset + self.lift_offset)
+        lift = (target[0], target[1], ABOVE_Z)
 
-        self.get_logger().info('moving to pre-grasp %s' % (pre,))
-        if not self.move_to(pre):
-            self.get_logger().error('pre-grasp failed')
-            return 1
-        if not self._wait_tcp(pre, timeout=8.0, tol=0.02):
-            self.get_logger().warn(
-                'pre-grasp did not settle, descending from actual pose')
-
-        # Remove only the target from the collision scene so the final
-        # camera/gripper approach is checked against the arm, table and the
-        # other objects but not against the object being grasped.
+        # From the observation pose go straight down to the pre-grasp with
+        # one Cartesian move (the target is already removed), then pause and
+        # do the short vertical descent.  Avoid a long free-space MoveIt plan
+        # that circles around the target.
         self.remove_object(self.cfg['model'])
+        self.get_logger().info('moving to pre-grasp %s' % (pre,))
+        ok, fraction = self.cartesian([pre])
+        if not ok:
+            self.get_logger().warn(
+                'Cartesian pre-grasp %.2f, fallback MoveIt' % fraction)
+            if not self.move_to(pre):
+                self.get_logger().error('pre-grasp move failed')
+                return 1
+        self._wait_tcp(pre, timeout=8.0, tol=0.02)
+        self._step('到达 pre-grasp (%.3f, %.3f, %.3f)' % pre)
+
         self.get_logger().info('descending to %s' % (grasp,))
         ok, fraction = self.cartesian([grasp])
         if not ok:
@@ -918,12 +1114,19 @@ class VisualGrasp(Node):
                 'arm did not settle at the grasp pose; aborting before '
                 'closing the gripper')
             return 1
+        self._step('到达抓取位 (%.3f, %.3f, %.3f)' % grasp)
 
         self._log_geometry('at grasp')
+        self._step('夹爪闭合 (q=%.3f)' % self.close_q)
         self.get_logger().info('closing gripper')
         self.get_logger().info('close action: %s' % self.grip_to(self.close_q))
-        time.sleep(0.5)
+        self._settle(0.5)
         self._log_geometry('after close')
+        fingers = [round(self.joint_positions.get(j, -1.0), 4)
+                   for j in GRIPPER_JOINTS]
+        self._step('抓取校验: 手指=%s (物体应夹在指间)' % fingers)
+        if self.target_class == 'red_ball':
+            self._detachable('attach')
 
         self.get_logger().info('lifting to %s' % (lift,))
         ok, fraction = self.cartesian([lift])
@@ -935,41 +1138,10 @@ class VisualGrasp(Node):
             self.get_logger().error('lift failed')
             return 1
         self._wait_tcp(lift, timeout=10.0, tol=0.02)
-        time.sleep(0.8)
-
-        # Pure-vision grasp verification: look for the object above the
-        # table, near the TCP.  No odometry is used.
-        self._fresh_frame()
-        held = self.detect_label(self.target_class, table_prior=False,
-                                 publish_debug=True)
-        if held is None:
-            self.get_logger().warn(
-                'held object not visible at lift pose; moving to verify pose')
-            if self.move_to(SCAN_POSES[0]) and self._fresh_frame():
-                held = self.detect_label(self.target_class, table_prior=False)
+        self._settle(0.5)
         fingers = [round(self.joint_positions.get(j, -1.0), 4)
                    for j in GRIPPER_JOINTS]
-        if held is None:
-            self.get_logger().warn(
-                'held object not directly visible; relying on the place '
-                'visual verification; fingers=%s' % fingers)
-        else:
-            p = held[0]
-            tcp = self._tcp()
-            if tcp is not None:
-                dist = math.sqrt((p[0] - tcp.x) ** 2 +
-                                 (p[1] - tcp.y) ** 2 +
-                                 (p[2] - tcp.z) ** 2)
-            else:
-                dist = 999.0
-            success = p[2] > 0.10 and dist < 0.30
-            self.get_logger().info(
-                'GRASP %s %s: visual base=(%.3f, %.3f, %.3f), '
-                'tcp_dist=%.3f, fingers=%s' %
-                ('VERIFIED' if success else 'UNVERIFIED', self.target_class,
-                 p[0], p[1], p[2], dist, fingers))
-            if not success:
-                return 1
+        self._step('已抬起 (%.3f, %.3f, %.3f), 手指=%s' % (lift + (fingers,)))
         if not self.place_class:
             return 0
         return 0 if self.place_object() else 1

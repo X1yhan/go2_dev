@@ -142,7 +142,7 @@
 
     <!-- Green cylinder, 8 cm diameter x 10 cm, standing upright -->
     <model name="green_cylinder">
-      <pose>0.15 0.11 0.65 0 0 0</pose>
+      <pose>0.14 0.18 0.65 0 0 0</pose>
       <velocity_decay><linear>0.5</linear><angular>0.5</angular></velocity_decay>
       <plugin filename="ignition-gazebo-odometry-publisher-system"
               name="ignition::gazebo::systems::OdometryPublisher">
@@ -249,8 +249,8 @@
           <surface>
             <friction>
               <ode>
-                <mu>1.0</mu>
-                <mu2>1.0</mu2>
+                <mu>3.0</mu>
+                <mu2>3.0</mu2>
               </ode>
             </friction>
           </surface>

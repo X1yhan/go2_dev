@@ -78,14 +78,14 @@ def _simple_gripper_children(base_len=0.10, finger_travel=0.10):
         f'    <child link="gripper_finger1_link"/>'
         f'    <origin xyz="0 {closed_offset:.3f} 0.06" rpy="0 0 0"/>'
         '    <axis xyz="0 1 0"/>'
-        f'    <limit lower="0" upper="{finger_travel}" effort="50" velocity="0.2"/>'
+        f'    <limit lower="0" upper="{finger_travel}" effort="100" velocity="0.2"/>'
         '  </joint>'
         f'  <joint name="gripper_finger2_joint" type="prismatic">'
         f'    <parent link="gripper_base_link"/>'
         f'    <child link="gripper_finger2_link"/>'
         f'    <origin xyz="0 {-closed_offset:.3f} 0.06" rpy="0 0 0"/>'
         '    <axis xyz="0 -1 0"/>'
-        f'    <limit lower="0" upper="{finger_travel}" effort="50" velocity="0.2"/>'
+        f'    <limit lower="0" upper="{finger_travel}" effort="100" velocity="0.2"/>'
         '  </joint>'
         '  <link name="gripper_finger1_link">'
         '    <inertial><mass value="0.05"/>'
@@ -203,8 +203,8 @@ def build(go2_urdf, arm_urdf, go2_share, arm_share,
             root.append(child)
         for link in ('gripper_finger1_link', 'gripper_finger2_link'):
             gz = ET.SubElement(root, 'gazebo', {'reference': link})
-            ET.SubElement(gz, 'mu1').text = '5.0'
-            ET.SubElement(gz, 'mu2').text = '5.0'
+            ET.SubElement(gz, 'mu1').text = '8.0'
+            ET.SubElement(gz, 'mu2').text = '8.0'
     elif gripper != 'none':
         if not gripper_share:
             raise RuntimeError('gripper=%s needs --gripper-share' % gripper)

@@ -301,15 +301,15 @@ scripts/check_layers.sh     # 同一件事的自动版本，违反即以非零�
 
 ## 8. 迁移顺序（每一步都能跑、都能回退）
 
-| 步 | 动作 | 风险 | 验收 |
-|---|---|---|---|
-| 0 | 把 Ubuntu 机器上那份未提交改动（`arm_bench_planning_scene.py` 等）先提交备份 | 无 | `git status` 干净 |
-| 1 | 抽出 `detection.py` + `geometry.py` 纯函数 | 低 | `scan_only:=true` 输出与现在逐位一致 |
-| 2 | `world.py`（先只在进程内用，不发话题） | 低 | 场景物体位置与 `arm_bench.sdf` 一致 |
-| 3 | `skills.py` 返回 `(ok, reason)`，`run()` 改为调用它 | 中 | 抓红球→放黄盒子全流程通过 |
-| 4 | `language.py` 去掉对 `arm_bench_visual_grasp` 的 import（`OBJECTS` 挪到 `detection.py` 或独立 `objects.py`） | 低 | 铁律 1 的 grep 为空 |
-| 5 | 语言层 `subprocess` → 同进程调用 skills（或 action，等 L4 稳定后） | 中 | 失败时能打印结构化原因 |
-| 6 | 决定 `vision_sim` / `go2_vision` 去重还是显式声明"两套并存" | 低 | 写进本文档 §4.4 |
+| 步 | 动作 | 风险 | 验收 | 状态 |
+|---|---|---|---|---|
+| 0 | 把 Ubuntu 机器上那份未提交改动（`arm_bench_planning_scene.py` 等）先提交备份 | 无 | `git status` 干净 | ✅ `df21713` |
+| 1 | 抽出 `detection.py` + `geometry.py` 纯函数 | 低 | `scan_only:=true` 输出与原来逐位一致 | ✅ 已跑通 |
+| 2 | `world.py`（先只在进程内用，不发话题） | 低 | 场景物体位置与 `arm_bench.sdf` 一致 | ✅ 已跑通 |
+| 3 | `skills.py` 返回 `(ok, reason)`，`run()` 改为调用它 | 中 | 抓红球→放黄盒子全流程通过 | ✅ err_xy=0.013 |
+| 4 | `language.py` 去掉对 `arm_bench_visual_grasp` 的 import（`OBJECTS` 独立成 `objects.py`） | 低 | 铁律 1 的 grep 为空 | ✅ 已修 |
+| 5 | 语言层 `subprocess` → 同进程调用 skills（或 action，等 L4 稳定后） | 中 | 失败时能打印结构化原因 | ⬜ 未做 |
+| 6 | 决定 `vision_sim` / `go2_vision` 去重还是显式声明"两套并存" | 低 | 写进本文档 §4.4 | ⬜ 未做（只写了结论） |
 
 **为什么不先做第 5 步**：语言层换成 action 之前，L4 得先有稳定的 `(ok, reason)` 接口，否则只是把"读退出码"换成"读 action result 里的退出码"。
 
@@ -320,7 +320,7 @@ scripts/check_layers.sh     # 同一件事的自动版本，违反即以非零�
 | 不做 | 理由 |
 |---|---|
 | 拆纯转发节点 | 每个节点都是一次序列化 + 一次调度；转发节点只增加延迟和故障点 |
-| 引入行为树（`py_trees`） | 现在是"一次抓取"的线性流程，行为树会把 353 行的 REPL 变成 800 行的树。等出现"多任务并发/抢占/恢复"需求再说 |
+| 引入行为树（`py_trees`） | 现在是"一次抓取"的线性流程，行为树会把现在的线性 REPL 变成 800 行的树。等出现"多任务并发/抢占/恢复"需求再说 |
 | 现在就统一 `vision_sim` 与 `go2_vision` | 一个是仿真验证环境、一个是狗载真机管线，合并的收益要等两边话题稳定后再评估。**先写清结论，别动代码** |
 | 为分层而分层（每层一个 msg） | 层间传递用 dataclass 就够；只有跨进程才需要 msg |
 

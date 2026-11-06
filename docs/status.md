@@ -42,6 +42,9 @@
 - **升级注意**:`CMakeLists.txt` 新增了 `install(DIRECTORY scripts/arm_bench ...)`,
   所以 `git pull` 之后必须 `colcon build --packages-select go2_description --symlink-install`
   一次(之后再改 `.py` 就不用 build 了)。不 build 会 `ModuleNotFoundError: arm_bench`。
+- 离线回归:`python3 ros2_ws/src/go2_description/scripts/test_arm_bench_pure.py`
+  (纯 stdlib,不需要 source ROS;覆盖中文解析 / 抓放几何 / 尺寸表 / 场景融合)。
+  分层检查:`./scripts/check_layers.sh`(三条铁律,违反退出码 1)。
 
 ### 独立机械臂仿真 arm_bench(2026-10-20)
 - 新增 `worlds/arm_bench.sdf`:地面 + 0.6m 立方桌 + 红色小球 `target_ball`

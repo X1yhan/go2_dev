@@ -9,7 +9,7 @@ install(
 )
 
 install(
-  PROGRAMS scripts/go2_trot.py scripts/go2_teleop.py scripts/build_arm_model.py scripts/grasp_ball.py scripts/chase_grasp.py scripts/arm_bench_home.py scripts/arm_bench_visual_grasp.py scripts/arm_bench_teleop.py scripts/arm_bench_object_detector.py scripts/arm_bench_language.py
+  PROGRAMS scripts/go2_trot.py scripts/go2_teleop.py scripts/build_arm_model.py scripts/grasp_ball.py scripts/chase_grasp.py scripts/arm_bench_home.py scripts/arm_bench_visual_grasp.py scripts/arm_bench_teleop.py scripts/arm_bench_object_detector.py scripts/arm_bench_language.py scripts/arm_bench_planning_scene.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

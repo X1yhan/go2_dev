@@ -310,6 +310,13 @@ ros2 launch go2_description arm_moveit.launch.py
 等待 move_group 初始化完成。RViz 会打开，MoveIt 使用仿真时间。
 无显示器时把最后一条命令改成 `ros2 launch go2_description arm_moveit.launch.py rviz:=false`。
 
+注意：当前 `arm_moveit.launch.py` 读取 `arm_bench.launch.py` 写出的
+`/tmp/arm_bench_moveit.urdf`，而 `gazebo.launch.py arm:=true` 不会生成该文件；
+直接组合启动会报 `assembled URDF not found`。Go2 + RM75 的交互规划建议先用
+8.4 节的 `arm_bench` 流程；若要恢复这条整车链路，最小改动是让
+`gazebo.launch.py` 输出自己的装配 URDF，并给 `arm_moveit.launch.py` 增加
+`urdf:=...` 参数（或缺失文件时回退到标准 RM75 配置）。
+
 ### 终端 C：复位小球并执行抓球
 
 当前 `go2_sim.sdf` 里的绿球默认在 `x=1.5`，是给追球脚本用的；简单抓球需要先把球
@@ -493,9 +500,24 @@ source ~/rm_ws/install/setup.bash
 ros2 launch go2_description arm_moveit.launch.py
 ```
 
-MoveIt 使用 `rm_75_config` 里的标准 RM75 模型（不含相机/夹爪外观），控制的仍是
-同一套 `rm_group_controller`。可在 RViz 里拖动 MotionPlanning 目标继续调姿态
-（适合笛卡尔点动，Plan & Execute，不用写程序）。
+MoveIt 使用 `arm_bench` 写出的装配 URDF（RM75 + D435i + AG95），控制的仍是同一套
+`rm_group_controller`。在 RViz 的 MotionPlanning 面板选择 `rm_group`，拖动
+Goal State 交互标记即可改目标位姿，然后 Plan / Execute，不用写程序。默认规划场景
+不含 Gazebo 的桌子和物体；需要它们参与碰撞检查时，另开终端运行：
+
+```bash
+cd ~/go2_dev
+source scripts/setup_env.sh
+source ~/rm_ws/install/setup.bash
+ros2 run go2_description arm_bench_planning_scene.py
+```
+
+也可以直接用一键交互入口（会启动 MoveIt RViz 和碰撞场景，不启动语言终端）：
+
+```bash
+cd ~/go2_dev
+scripts/start_arm_bench.sh --interactive      # Ctrl+C 退出并清理
+```
 
 想在仿真里像示教器一样实时点动关节，用键盘示教脚本（无需额外安装）：
 
@@ -598,9 +620,11 @@ ros2 run go2_description arm_bench_visual_grasp.py \
 
 说明：
 
-- MoveIt 使用的是和 Gazebo 同一套装配 URDF（RM75 + D435i + AG95），
-  相机/夹爪参与碰撞检查；`arm_moveit.launch.py` 必须在
-  `arm_bench.launch.py` 之后启动（前者读取后者写出的装配 URDF）
+- MoveIt 使用的是和 Gazebo 同一套装配 URDF（RM75 + D435i + AG95）；
+  夹爪参与碰撞检查，但相机碰撞几何当前在 launch 中被移除
+  （`_strip_camera_collisions`），所以相机与桌面的物理接触不会被规划器预测；
+  `arm_moveit.launch.py` 必须在 `arm_bench.launch.py` 之后启动
+  （前者读取后者写出的装配 URDF）
 - RViz 不加载 Gazebo 的 SDF 世界：A 的 RViz 里看到的是相机点云/图像，
   MoveIt RViz 里看到的是扫描出来的 collision objects，不是 Gazebo 模型；
   两边布局不完全一致是数据源不同，不是 Gazebo 布局变了

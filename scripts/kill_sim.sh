@@ -25,6 +25,7 @@ PATTERNS=(
     "go2_vision"
     "move_group"
     "arm_moveit.launch.py"
+    "arm_bench_planning_scene"
 )
 
 kill_matching() {

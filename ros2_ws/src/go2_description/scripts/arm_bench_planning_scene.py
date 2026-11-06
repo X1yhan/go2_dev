@@ -5,71 +5,26 @@ Adds the table and the four tabletop objects in base_link coordinates so the
 MotionPlanning panel checks collisions against the simulated world.  Object
 poses come from Gazebo odometry when available; otherwise the known world
 layout is used.
+
+The object table and the CollisionObject builders are shared with the grasp
+node (`arm_bench/objects.py`, `arm_bench/world.py`), so the two can no
+longer drift apart.
 """
+import os
+import sys
 import time
 
-import rclpy
-from geometry_msgs.msg import Pose
-from moveit_msgs.msg import CollisionObject, PlanningScene
-from moveit_msgs.srv import ApplyPlanningScene
-from nav_msgs.msg import Odometry
-from rclpy.node import Node
-from rclpy.parameter import Parameter
-from shape_msgs.msg import SolidPrimitive
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-BASE_FRAME = 'base_link'
+import rclpy  # noqa: E402
+from moveit_msgs.srv import ApplyPlanningScene  # noqa: E402
+from nav_msgs.msg import Odometry  # noqa: E402
+from rclpy.node import Node  # noqa: E402
+from rclpy.parameter import Parameter  # noqa: E402
 
-OBJECTS = {
-    'target_ball': {
-        'model': 'target_ball', 'shape': 'sphere', 'dims': [0.035],
-        'default': (0.22, 0.0, 0.035),
-    },
-    'blue_cube': {
-        'model': 'blue_cube', 'shape': 'box', 'dims': [0.07, 0.07, 0.07],
-        'default': (0.26, -0.16, 0.035),
-    },
-    'green_cylinder': {
-        'model': 'green_cylinder', 'shape': 'cylinder', 'dims': [0.10, 0.04],
-        'default': (0.14, 0.18, 0.05),
-    },
-    'yellow_box': {
-        'model': 'yellow_box', 'shape': 'box',
-        'dims': [0.10, 0.075, 0.07],
-        'default': (0.25, 0.16, 0.035),
-    },
-}
-
-
-def _pose(xyz, quat=None):
-    pose = Pose()
-    pose.position.x = float(xyz[0])
-    pose.position.y = float(xyz[1])
-    pose.position.z = float(xyz[2])
-    if quat is None:
-        pose.orientation.w = 1.0
-    else:
-        pose.orientation = quat
-    return pose
-
-
-def _collision_object(name, shape, dims, pose):
-    obj = CollisionObject()
-    obj.header.frame_id = BASE_FRAME
-    obj.id = name
-    obj.operation = CollisionObject.ADD
-    primitive = SolidPrimitive()
-    if shape == 'sphere':
-        primitive.type = SolidPrimitive.SPHERE
-        primitive.dimensions = [float(dims[0])]
-    elif shape == 'cylinder':
-        primitive.type = SolidPrimitive.CYLINDER
-        primitive.dimensions = [float(dims[0]), float(dims[1])]
-    else:
-        primitive.type = SolidPrimitive.BOX
-        primitive.dimensions = [float(v) for v in dims]
-    obj.primitives.append(primitive)
-    obj.primitive_poses.append(pose)
-    return obj
+from arm_bench import world  # noqa: E402
+from arm_bench.constants import BASE_FRAME  # noqa: E402
+from arm_bench.objects import OBJECTS  # noqa: E402
 
 
 class ArmBenchPlanningScene(Node):
@@ -95,16 +50,16 @@ class ArmBenchPlanningScene(Node):
         self.apply_client = self.create_client(
             ApplyPlanningScene, '/apply_planning_scene')
         if self.use_odom:
-            for name, cfg in OBJECTS.items():
+            for label, cfg in OBJECTS.items():
                 self.create_subscription(
                     Odometry, '/model/%s/odometry' % cfg['model'],
-                    lambda msg, key=name: self._on_odom(key, msg), 10)
+                    lambda msg, key=label: self._on_odom(key, msg), 10)
         self.timer = self.create_timer(1.0, self._publish)
 
-    def _on_odom(self, name, msg):
-        p = msg.pose.pose.position
-        self.odom_poses[name] = _pose(
-            (p.x, p.y, p.z - self.base_z_offset),
+    def _on_odom(self, label, msg):
+        position = msg.pose.pose.position
+        self.odom_poses[label] = world.pose(
+            (position.x, position.y, position.z - self.base_z_offset),
             msg.pose.pose.orientation)
 
     def _waiting_for_odom(self):
@@ -115,20 +70,14 @@ class ArmBenchPlanningScene(Node):
         return time.monotonic() - self.started < self.grace_period
 
     def _build_scene(self):
-        objects = [
-            _collision_object('table', 'box', [0.6, 0.6, 0.6],
-                              _pose((0.0, 0.0, -0.3)))
-        ]
-        for name, cfg in OBJECTS.items():
-            pose = self.odom_poses.get(name)
+        objects = [world.table_object(BASE_FRAME)]
+        for label, cfg in OBJECTS.items():
+            pose = self.odom_poses.get(label)
             if pose is None:
-                pose = _pose(cfg['default'])
-            objects.append(_collision_object(
-                cfg['model'], cfg['shape'], cfg['dims'], pose))
-        scene = PlanningScene()
-        scene.is_diff = True
-        scene.world.collision_objects = objects
-        return scene
+                pose = world.pose(cfg['default'])
+            objects.append(world.collision_object(
+                cfg['model'], cfg['shape'], cfg['dims'], pose, BASE_FRAME))
+        return world.diff_scene(objects)
 
     def _publish(self):
         if self.done or self.pending:

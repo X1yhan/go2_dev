@@ -13,4 +13,13 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Support package for the arm bench nodes above: pure python, no entry
+# points of its own.  With --symlink-install this installs a symlink to the
+# source directory, so edits take effect without a rebuild.
+install(
+  DIRECTORY scripts/arm_bench
+  DESTINATION lib/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
+)
+
 ament_package()

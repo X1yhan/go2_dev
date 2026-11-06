@@ -6,6 +6,43 @@
 
 ## 已完成
 
+### 分层重构 arm_bench(`2026-11-06`)
+
+`arm_bench_visual_grasp.py` 原来是一个 1162 行的类(`VisualGrasp`),横跨检测/几何/
+世界模型/规划/夹爪/编排六种职责。按「变化频率不同」拆成 `scripts/arm_bench/` 包,
+**文件层拆分,不拆节点**——话题名、参数名、节点名、碰撞体 id 全部不变,
+`start_arm_bench.sh` 与 Robot Studio 零感知。
+
+- 入口脚本变薄壳:`arm_bench_visual_grasp.py` 1162→36 行、`arm_bench_language.py`
+  353→137 行、`arm_bench_planning_scene.py` 179→128 行(去掉自带的第二份 `OBJECTS`)
+- 新包 `scripts/arm_bench/`:`constants` / `objects` / `geometry` / `detection` /
+  `scene` / `world` / `vision` / `skills` / `language` / `grasp`,共 14 个文件 2266 行
+- 五层依赖只向下:L5 `language.py`(纯 stdlib)→ L4 `grasp.py`+`skills.py` →
+  L3 `world.py`/`arm_bench_planning_scene.py` → L2 `vision.py`/`detection.py`/检测节点
+  → L1 launch;详见 `docs/architecture.md` 与 `docs/architecture.html`
+- 铁律 3 修正:原文档写「只有 L4 可 import `moveit_msgs`」,但 L3 的 planning scene
+  本身就是 `moveit_msgs`,自相矛盾 → 改为「只允许 `world.py` / `skills.py` /
+  `arm_bench_planning_scene.py` / `grasp_ball.py` / `chase_grasp.py`」
+- 新增 `scripts/check_layers.sh`:三条铁律的可执行检查(只匹配 import 行,
+  注释里提到 `moveit_msgs` 不算),违反退出码 1
+- 行为等价性:与原实现逐段对照过(检测的深度取值、反投影、IK 种子、Cartesian 阈值、
+  action 名与等待时间、日志序列),`run()` 的日志只有 3 处有意差异
+- 三处有意改动:`place_object()` 返回 `(ok, reason)`;`run()` 补了目标取不到时的
+  防御(原版会 KeyError);`OBJECTS` 不再被 `self.cfg` 原地污染(改 `dict` 拷贝)
+- Ubuntu 实测(scratch 目录 `~/go2_layering`,`ROS_DOMAIN_ID=42` +
+  `IGN_PARTITION=go2arch` 与 RS 隔离):
+  - 直接跑 L4:`PLACE SUCCESS red_ball -> yellow_box ... err_xy=0.014`
+  - planning scene 节点:`planning scene ready: table + target_ball, blue_cube,
+    green_cylinder, yellow_box (odometry)`
+  - 自然语言端到端(`抓红球,放到黄盒子上` + `y` 确认):`PLACE SUCCESS ...
+    err_xy=0.013`;Gazebo 真值 `target_ball (0.2557, 0.1637, 0.7050)` =
+    黄盒顶面 0.670 + 球半径 0.035,正好落在盒子上
+  - 已知不稳定:球形叠放偶发滚落导致视觉复检 `PLACE unverified`(球跑出视野),
+    这是重构前就有的固有问题,与分层无关;叠放建议用方块/圆柱
+- **升级注意**:`CMakeLists.txt` 新增了 `install(DIRECTORY scripts/arm_bench ...)`,
+  所以 `git pull` 之后必须 `colcon build --packages-select go2_description --symlink-install`
+  一次(之后再改 `.py` 就不用 build 了)。不 build 会 `ModuleNotFoundError: arm_bench`。
+
 ### 独立机械臂仿真 arm_bench(2026-10-20)
 - 新增 `worlds/arm_bench.sdf`:地面 + 0.6m 立方桌 + 红色小球 `target_ball`
   (r=0.035, 世界坐标 `(0.22,0,0.635)`, 带 odometry)
@@ -35,7 +72,7 @@
 
 ### 多物体视觉识别抓取(2026-10-30)
 - 桌面新增 3 个物体(带 odometry):`blue_cube` 0.07 立方 `(0.26,-0.16)`,
-  `green_cylinder` r0.04 h0.10 `(0.15,0.11)`, `yellow_box`
+  `green_cylinder` r0.04 h0.10 `(0.14,0.18)`, `yellow_box`
   0.10x0.075x0.07 `(0.25,0.16)`;原 `target_ball` 保留(标签 red_ball)
 - 新增 `scripts/arm_bench_object_detector.py`:HSV 颜色分割 -> 标签
   (`red_ball/blue_cube/green_cylinder/yellow_box`),发布
@@ -313,8 +350,10 @@ scripts/kill_sim.sh                                            # 清理全部仿
 - pip 用户级 `setuptools 84` 和系统 `packaging 21.3` 冲突,colcon 构建 Python 包报
   `canonicalize_version() got an unexpected keyword argument 'strip_trailing_zero'`;
   已升 packaging(26.3)+ 降 setuptools(79.0.1)解决。
-- 改 launch 文件后也要 `colcon build`(launch 会装到 install/,不 build 跑的还是旧版;
-  此次 `align_depth.enable` 改完没 build,排查了一轮)。
+- colcon 是 `--symlink-install`,所以改 `.py`/`launch` 文件**不用重新 build**
+  (install 里是指回源码的软链);只有改 `CMakeLists.txt` / `package.xml` /
+  新增文件（未在 install 记录里）时才需要 `colcon build`。
+  早期这条写的是"改 launch 也要 build",那是非 symlink 安装时的经验,已过期。
 - realsense-ros 4.58 的驱动参数是嵌套名(`align_depth.enable`、
   `rgb_camera.color_profile` 等),rs_launch 同名;不是旧版的 `align_depth`。
 - vision_msgs Humble 的 `Detection2D` **没有 pose 字段**,深度放

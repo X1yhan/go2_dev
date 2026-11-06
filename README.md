@@ -570,7 +570,7 @@ ros2 run go2_description arm_bench_visual_grasp.py \
 | --- | --- | --- | --- |
 | `red_ball` | `target_ball` | `(0.22, 0, 0.635)` | 球 r=0.035 |
 | `blue_cube` | `blue_cube` | `(0.26, -0.16, 0.635)` | 0.07 立方 |
-| `green_cylinder` | `green_cylinder` | `(0.15, 0.11, 0.65)` | r=0.04, h=0.10 |
+| `green_cylinder` | `green_cylinder` | `(0.14, 0.18, 0.65)` | r=0.04, h=0.10 |
 | `yellow_box` | `yellow_box` | `(0.25, 0.16, 0.635)` | 0.10 x 0.075 x 0.07 |
 
 检测/扫描：
@@ -628,6 +628,38 @@ ros2 run go2_description arm_bench_visual_grasp.py \
 - RViz 不加载 Gazebo 的 SDF 世界：A 的 RViz 里看到的是相机点云/图像，
   MoveIt RViz 里看到的是扫描出来的 collision objects，不是 Gazebo 模型；
   两边布局不完全一致是数据源不同，不是 Gazebo 布局变了
+
+#### 代码结构（分层）
+
+`arm_bench_visual_grasp.py` 现在只是一层薄壳（36 行），实现在 `scripts/arm_bench/`
+包里，按「变化频率」分五层，**依赖只能向下**：
+
+| 层 | 入口 / 文件 | 职责 | 允许依赖 |
+| --- | --- | --- | --- |
+| L5 任务 | `arm_bench_language.py` → `language.py` | 中文解析 + REPL | 只 `language`、`objects` |
+| L4 技能 | `arm_bench_visual_grasp.py` → `grasp.py` + `skills.py` | 六步编排 / MoveIt 动作 | 向下全部 |
+| L3 世界模型 | `arm_bench_planning_scene.py` → `world.py` | planning scene 下发 | `moveit_msgs` |
+| L2 感知 | `arm_bench_object_detector.py`、`vision.py`、`detection.py` | 检测 + 反投影 + TF | `cv2` / `numpy` / `tf2` |
+| L1 硬件 / 仿真 | `arm_bench.launch.py`、`arm_moveit.launch.py` | Gazebo / MoveIt / 控制器 | — |
+
+三条规则用脚本检查，违反则退出码 1：
+
+```bash
+scripts/check_layers.sh       # 铁律：L5 不碰 MoveIt/OpenCV；L2 不碰 moveit_msgs；
+                              #       moveit_msgs 只出现在 world.py / skills.py / planning_scene.py
+```
+
+拆开之后能单独跑的部分：`geometry.py`、`scene.py`、`objects.py`、`language.py`
+全是纯 stdlib（不含 cv2/numpy/ROS），例如中文解析不用起仿真就能测：
+
+```bash
+cd ros2_ws/src/go2_description/scripts && python3 -c "
+from arm_bench.language import parse_command
+print(parse_command('抓红球,放到黄盒子上'))"
+```
+
+话题名、参数名、节点名、碰撞体 id 全部没变，RS 和旧命令零感知。
+`place_object()` 改为返回 `(ok, reason)`，为语言层显示失败原因留了口子。
 
 ### 8.6 自然语言交互（规则语法）
 

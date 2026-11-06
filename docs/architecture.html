@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>go2_dev 架构图 · 为什么这样分层</title>
+<style>
+  :root{
+    --bg:#f4f5f7;
+    --card:#ffffff;
+    --ink:#1a1d21;
+    --ink-2:#4a5058;
+    --ink-3:#7b838e;
+    --line:#e3e6ea;
+    --line-2:#d2d6dc;
+    --l1:#64748b;
+    --l2:#0f9d63;
+    --l3:#d97706;
+    --l4:#2563eb;
+    --l5:#7c3aed;
+    --bad:#dc2626;
+    --good:#0f9d63;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Noto Sans SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px 120px}
+
+  /* ---------- 顶部 ---------- */
+  header.hero{
+    padding:64px 0 8px;
+  }
+  .kicker{
+    font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:14px;
+  }
+  h1{font-size:38px;line-height:1.25;margin:0 0 18px;letter-spacing:-.02em;font-weight:700}
+  h1 small{display:block;font-size:17px;font-weight:400;color:var(--ink-2);margin-top:12px;letter-spacing:0}
+  .thesis{
+    background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ink);
+    border-radius:10px;padding:20px 24px;margin:28px 0 8px;
+    font-size:17px;line-height:1.75;
+  }
+  .thesis b{background:linear-gradient(transparent 62%,#ffe28a 62%);padding:0 2px}
+
+  /* ---------- 章节 ---------- */
+  section{margin-top:72px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:8px}
+  .sec-num{
+    font-family:var(--mono);font-size:12px;color:#fff;background:var(--ink);
+    border-radius:5px;padding:3px 8px;letter-spacing:.06em;flex:none;
+  }
+  h2{font-size:25px;margin:0;letter-spacing:-.01em;font-weight:700}
+  .lede{color:var(--ink-2);margin:10px 0 26px;max-width:74ch}
+
+  /* ---------- 通用卡片 ---------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+  .pad{padding:22px 24px}
+  .mono{font-family:var(--mono)}
+  code{
+    font-family:var(--mono);font-size:.87em;background:#eef0f3;border-radius:4px;
+    padding:1.5px 5px;color:#243044;white-space:nowrap;
+  }
+  .chip{
+    display:inline-block;font-family:var(--mono);font-size:11.5px;
+    background:#eef0f3;border:1px solid var(--line-2);border-radius:999px;
+    padding:2px 9px;margin:0 4px 4px 0;color:#3d4652;white-space:nowrap;
+  }
+  .chip.mv{border-color:#f3c9c9;background:#fdf1f1;color:#9b1c1c}
+  .chip.cv{border-color:#c9e2cf;background:#f0faf3;color:#0b6b43}
+
+  /* ---------- 现状解剖图 ---------- */
+  .anatomy{
+    display:grid;grid-template-columns:96px 1fr;gap:0;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  }
+  .anatomy .rail{
+    background:#f7f8fa;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;justify-content:center;align-items:flex-start;
+    padding:20px 12px;gap:3px;
+  }
+  .rail-num{font-family:var(--mono);font-size:27px;font-weight:700;color:var(--bad);line-height:1.05}
+  .rail-sub{font-size:11px;color:var(--ink-3);line-height:1.3;letter-spacing:.02em;white-space:nowrap}
+  .rail-sep{width:26px;height:1px;background:var(--line-2);margin:11px 0 9px}
+  .rail-label{
+    font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+    color:var(--ink-2);line-height:1.5;white-space:nowrap;
+  }
+  .anatomy .body{padding:0}
+  .class-head{
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    padding:14px 20px;border-bottom:1px solid var(--line);background:#fbfcfd;
+  }
+  .class-head .sig{font-family:var(--mono);font-size:13px;color:#1e2a3a;font-weight:600}
+  .class-head .loc{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-left:auto}
+  .duty{
+    display:grid;grid-template-columns:8px 132px 1fr;gap:0;
+    border-bottom:1px solid #eef0f2;
+  }
+  .duty:last-child{border-bottom:none}
+  .duty .bar{background:currentColor;opacity:.85}
+  .duty .name{
+    padding:12px 14px;font-weight:600;font-size:13.5px;color:var(--ink);
+    display:flex;align-items:center;border-right:1px solid #eef0f2;
+  }
+  .duty .methods{
+    padding:11px 16px;font-family:var(--mono);font-size:11.5px;line-height:1.95;
+    color:#4b5563;overflow-wrap:anywhere;
+  }
+  .duty.d1{color:#0891b2} .duty.d2{color:#7c3aed} .duty.d3{color:#d97706}
+  .duty.d4{color:#2563eb} .duty.d5{color:#db2777} .duty.d6{color:#059669}
+  .foot-note{
+    padding:12px 20px;background:#fdf1f1;border-top:1px solid #f3d7d7;
+    font-size:13px;color:#8a1c1c;display:flex;gap:10px;align-items:flex-start;
+  }
+  .foot-note .ico{font-weight:700;flex:none}
+
+  /* ---------- 代价三卡 ---------- */
+  .costs{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}
+  .cost{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;
+    border-top:3px solid var(--bad);
+  }
+  .cost h4{margin:0 0 8px;font-size:14.5px;font-weight:700}
+  .cost p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.65}
+  .cost .num{
+    font-family:var(--mono);font-size:11px;color:var(--bad);
+    letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:8px;
+  }
+
+  /* ---------- 五层堆叠 ---------- */
+  .stack{margin-top:26px;position:relative;padding-left:34px}
+  .stack::before{
+    content:"";position:absolute;left:12px;top:26px;bottom:34px;
+    width:2px;background:linear-gradient(var(--l5),var(--l4),var(--l3),var(--l2),var(--l1));
+    opacity:.35;
+  }
+  .layer{position:relative;margin-bottom:14px}
+  .layer::before{
+    content:"";position:absolute;left:-27px;top:26px;width:11px;height:11px;
+    border-radius:50%;background:var(--c);border:3px solid var(--bg);
+    box-shadow:0 0 0 1.5px var(--c);
+  }
+  .layer-inner{
+    background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);
+    border-radius:10px;padding:16px 20px;
+    display:grid;grid-template-columns:170px 1fr 232px;gap:20px;align-items:start;
+  }
+  .layer .lname{display:flex;flex-direction:column;gap:3px}
+  .layer .lcode{
+    font-family:var(--mono);font-size:11px;color:var(--c);font-weight:700;letter-spacing:.06em;
+  }
+  .layer .lcn{font-size:16px;font-weight:700;letter-spacing:-.01em}
+  .layer .lrole{font-size:12.5px;color:var(--ink-3);line-height:1.5}
+  .layer .files{display:flex;flex-direction:column;gap:6px}
+  .layer .files .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .layer .fname{
+    font-family:var(--mono);font-size:11.5px;color:#243044;
+    background:#f2f4f7;border:1px solid var(--line);border-radius:5px;padding:2px 7px;
+  }
+  .layer .fname.wip{border-style:dashed;border-color:#e5b98a;background:#fffaf2;color:#8a5000}
+  .layer .out{border-left:2px dashed var(--line-2);padding-left:16px}
+  .layer .out .lbl{
+    font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-3);font-family:var(--mono);margin-bottom:5px;
+  }
+  .layer .out .v{font-family:var(--mono);font-size:11.5px;color:#243044;line-height:1.7;overflow-wrap:anywhere}
+  .layer .out .v em{font-style:normal;color:var(--ink-3)}
+  .stack-legend{
+    margin-top:6px;padding-left:0;display:flex;gap:22px;flex-wrap:wrap;
+    font-size:12.5px;color:var(--ink-3);
+  }
+  .stack-legend span{display:flex;align-items:center;gap:7px}
+  .stack-legend i{width:22px;height:2px;background:var(--ink-3);display:inline-block;position:relative;top:-2px}
+  .stack-legend i.down::after{
+    content:"▾";position:absolute;right:-4px;top:-9px;font-size:12px;color:var(--ink-3);
+  }
+  .stack-legend i.up{background:var(--bad)}
+  .stack-legend i.up::after{
+    content:"▴";position:absolute;right:-4px;top:-4px;font-size:12px;color:var(--bad);
+  }
+
+  /* ---------- 铁律 ---------- */
+  .rules{margin-top:24px;display:flex;flex-direction:column;gap:12px}
+  .rule{
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:16px 20px;display:grid;grid-template-columns:30px 1fr 92px;gap:16px;align-items:start;
+  }
+  .rule .mark{font-size:17px;line-height:1.4}
+  .rule.bad .mark{color:var(--bad)}
+  .rule.ok .mark{color:var(--good)}
+  .rule h4{margin:0 0 6px;font-size:14px;font-weight:700}
+  .rule pre{
+    margin:8px 0 0;background:#1e242c;color:#e6edf3;border-radius:7px;
+    padding:11px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.7;
+    overflow-x:auto;white-space:pre;
+  }
+  .rule pre .c{color:#8b949e}
+  .rule pre .g{color:#7ee787}
+  .rule pre .r{color:#ff9b9b}
+  .verdict{
+    font-family:var(--mono);font-size:11px;text-align:center;
+    border-radius:999px;padding:4px 0;letter-spacing:.06em;
+  }
+  .verdict.bad{background:#fdf1f1;color:#9b1c1c;border:1px solid #f3c9c9}
+  .verdict.ok{background:#f0faf3;color:#0b6b43;border:1px solid #c9e2cf}
+
+  /* ---------- 判据流程 ---------- */
+  .flow{
+    display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr 44px 150px;
+    align-items:center;gap:0;margin-top:26px;
+  }
+  .q{
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:16px 16px;text-align:center;
+  }
+  .q .qn{font-family:var(--mono);font-size:11px;color:var(--ink-3);letter-spacing:.08em}
+  .q .qt{font-size:13.5px;font-weight:600;margin-top:6px;line-height:1.5}
+  .arrow-x{text-align:center;color:var(--line-2);font-size:20px}
+  .verdict-box{
+    border-radius:10px;padding:14px 12px;text-align:center;font-size:13px;font-weight:600;
+    line-height:1.5;
+  }
+  .verdict-box.no{background:#fdf1f1;border:1px solid #f3c9c9;color:#8a1c1c}
+  .verdict-box.yes{display:none}
+  .flow-foot{
+    margin-top:14px;font-size:13px;color:var(--ink-2);background:#fbfcfd;
+    border:1px dashed var(--line-2);border-radius:9px;padding:12px 18px;
+  }
+  .flow-foot b{color:var(--bad)}
+
+  .tbl{width:100%;border-collapse:collapse;margin-top:22px;font-size:13.5px;background:var(--card)}
+  .tbl th{
+    text-align:left;font-weight:600;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--ink-3);padding:10px 14px;border-bottom:1px solid var(--line-2);background:#fbfcfd;
+  }
+  .tbl td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl .pill{
+    font-family:var(--mono);font-size:11px;border-radius:999px;padding:2px 9px;white-space:nowrap;
+  }
+  .pill.node{background:#eaf1ff;color:#1d4ed8;border:1px solid #c7d8fb}
+  .pill.nonode{background:#f2f4f7;color:#4b5563;border:1px solid var(--line-2)}
+  .tbl code{white-space:nowrap}
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+
+  /* ---------- before/after 树 ---------- */
+  .trees{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px;align-items:start}
+  .tree{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .tree .th{
+    padding:11px 16px;font-size:12px;font-family:var(--mono);letter-spacing:.06em;
+    border-bottom:1px solid var(--line);background:#fbfcfd;color:var(--ink-2);
+  }
+  .tree pre{
+    margin:0;padding:16px;font-family:var(--mono);font-size:11.5px;line-height:1.95;
+    color:#3d4652;overflow-x:auto;
+  }
+  .tree.after .th{background:#f5f3ff;color:#5b21b6}
+  .tree pre .dim{color:#a0a7b1}
+
+  /* ---------- 迁移时间轴 ---------- */
+  .timeline{margin-top:26px;position:relative;padding-left:30px}
+  .timeline::before{
+    content:"";position:absolute;left:9px;top:14px;bottom:14px;width:2px;background:var(--line-2);
+  }
+  .step{position:relative;margin-bottom:12px}
+  .step::before{
+    content:"";position:absolute;left:-27px;top:17px;width:9px;height:9px;border-radius:50%;
+    background:#fff;border:2px solid var(--ink-3);
+  }
+  .step.s0::before{background:var(--ink);border-color:var(--ink)}
+  .step.done::before{background:#0f9d63;border-color:#0f9d63}
+  .done-badge{display:inline-block;margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+              color:#0b6b43;background:#f0faf3;border:1px solid #c9e2cf;border-radius:20px;padding:1px 8px;
+              vertical-align:1px;font-family:var(--mono)}
+  .step-body{
+    background:var(--card);border:1px solid var(--line);border-radius:9px;
+    padding:13px 18px;display:grid;grid-template-columns:1fr 78px 1fr;gap:16px;align-items:center;
+  }
+  .step-body .t{font-size:13.5px;font-weight:600}
+  .step-body .s{font-size:12px;color:var(--ink-3);margin-top:3px;font-family:var(--mono)}
+  .risk{
+    font-family:var(--mono);font-size:11px;text-align:center;border-radius:999px;padding:3px 0;
+  }
+  .risk.low{background:#f0faf3;color:#0b6b43;border:1px solid #c9e2cf}
+  .risk.mid{background:#fffaf0;color:#8a5000;border:1px solid #f0d9b5}
+  .step-body .accept{font-size:12.5px;color:var(--ink-2);line-height:1.55}
+  .step-body .accept b{font-weight:600;color:var(--ink-3);font-size:11px;letter-spacing:.06em;display:block}
+
+  /* ---------- RS 契约 ---------- */
+  .contract{
+    margin-top:24px;background:#12212e;color:#dbe6f0;border-radius:12px;padding:24px 26px;
+  }
+  .contract h3{margin:0 0 4px;font-size:15px;color:#fff;font-weight:600}
+  .contract .sub{font-size:12.5px;color:#8fa6ba;margin-bottom:18px;font-family:var(--mono)}
+  .contract-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+  .contract h5{
+    margin:0 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:#7f96ab;font-family:var(--mono);font-weight:600;
+  }
+  .contract ul{margin:0;padding:0;list-style:none}
+  .contract li{
+    font-family:var(--mono);font-size:12px;padding:3px 0;color:#cfe0ee;overflow-wrap:anywhere;
+    border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .contract li:last-child{border-bottom:none}
+  .contract .warn{
+    margin-top:18px;padding:12px 16px;border-radius:8px;
+    background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.35);
+    font-size:12.5px;color:#ffc9c9;line-height:1.6;
+  }
+  .contract .warn b{color:#fff}
+
+  /* ---------- 结论 ---------- */
+  .closing{
+    margin-top:72px;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:32px 34px;
+  }
+  .closing .big{font-size:21px;line-height:1.6;font-weight:600;letter-spacing:-.01em;margin:0 0 16px}
+  .closing p{margin:0 0 10px;color:var(--ink-2);font-size:14.5px}
+  .closing .sig{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-top:20px}
+
+  @media (max-width:900px){
+    .costs{grid-template-columns:1fr}
+    .layer-inner{grid-template-columns:1fr;gap:12px}
+    .layer .out{border-left:none;border-top:1px dashed var(--line-2);padding-left:0;padding-top:10px}
+    .flow{grid-template-columns:1fr;gap:10px}
+    .arrow-x{transform:rotate(90deg)}
+    .trees{grid-template-columns:1fr}
+    .step-body{grid-template-columns:1fr;gap:8px}
+    .contract-grid{grid-template-columns:1fr}
+    .anatomy{grid-template-columns:1fr}
+    .anatomy .rail{flex-direction:row;border-right:none;border-bottom:1px solid var(--line);gap:12px}
+        .duty{grid-template-columns:8px 1fr}
+    .duty .methods{grid-column:2}
+    h1{font-size:29px}
+  }
+  @media print{
+    body{background:#fff}
+    .wrap{max-width:none;padding:0}
+    section{break-inside:avoid}
+    .layer,.cost,.rule,.step{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">go2_dev · 架构说明 · 可视化版</div>
+  <h1>为什么这么分层
+    <small>一张能看懂的图：现在的代码长什么样、为什么它是个问题、拆成什么样、为什么先拆文件而不是先拆节点。</small>
+  </h1>
+
+  <div class="thesis">
+    ROS 2 已经替我们分好了层——<b>节点是进程边界，msg 是数据契约，launch 是组合方式</b>。
+    所以在这个项目里，「架构」不是「要不要拆节点」，而是三个能直接检查的问题：
+    <div style="margin-top:8px">① 一个节点能不能用一句话说清它做什么？</div>
+    <div>② import 关系会不会跨层？</div>
+    <div>③ 话题名和帧名有没有写在纸上？</div>
+  </div>
+</header>
+
+<!-- ============ 1. 现状 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>现状：一个类，六种职责</h2></div>
+  <p class="lede">
+    这不是「没分层」——分层是有的，只是全压在同一个 <code>Node</code> 里。
+    下面这个方块就是<b>拆之前</b> <code>arm_bench_visual_grasp.py</code> 的真实解剖：1162 行，其中类体 1040 行、39 个方法。
+    （现在这个文件只剩 36 行，内容都搬进了 §06 列的那些模块。）
+  </p>
+
+  <div class="anatomy">
+    <div class="rail">
+      <div class="rail-num">1040</div>
+      <div class="rail-sub">行 · 类体</div>
+      <div class="rail-sep"></div>
+      <div class="rail-label">39 个方法</div>
+    </div>
+    <div class="body">
+      <div class="class-head">
+        <span class="sig">class VisualGrasp(Node):</span>
+        <span class="loc">arm_bench_visual_grasp.py:111–1150</span>
+      </div>
+
+      <div class="duty d1">
+        <div class="bar"></div>
+        <div class="name">图像 / 检测</div>
+        <div class="methods">on_color · on_depth · on_info · on_detections · detect_label · _detect_all · _fresh_frame</div>
+      </div>
+
+      <div class="duty d2">
+        <div class="bar"></div>
+        <div class="name">几何</div>
+        <div class="methods">_tcp · _place_center · _free_beside_spot · _footprint_radius · _publish_marker</div>
+      </div>
+
+      <div class="duty d3">
+        <div class="bar"></div>
+        <div class="name">世界模型</div>
+        <div class="methods">_collision_object · set_scene · remove_object · clear_scene</div>
+      </div>
+
+      <div class="duty d4">
+        <div class="bar"></div>
+        <div class="name">规划 / 执行</div>
+        <div class="methods">move_to · move_to_joint · _compute_ik · _joint_move · cartesian · _wait_tcp</div>
+      </div>
+
+      <div class="duty d5">
+        <div class="bar"></div>
+        <div class="name">夹爪</div>
+        <div class="methods">grip_to · _detachable</div>
+      </div>
+
+      <div class="duty d6">
+        <div class="bar"></div>
+        <div class="name">任务编排</div>
+        <div class="methods">scan_scene · _scan_pass · _capture_current · place_object · run</div>
+      </div>
+
+      <div class="foot-note">
+        <span class="ico">↳</span>
+        <span>
+          所以它 import 的东西是：
+          <span class="chip cv">cv2</span><span class="chip cv">numpy</span><span class="chip cv">cv_bridge</span><span class="chip">tf2_ros</span><span class="chip">control_msgs</span><span class="chip mv">moveit_msgs ×12</span><span class="chip mv">geometry_msgs</span><span class="chip">nav_msgs</span>
+          <span style="display:block;margin-top:7px">—— <b>改一个 HSV 阈值，得先把它们全部加载一遍。</b></span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="costs">
+    <div class="cost">
+      <span class="num">代价 1</span>
+      <h4>改色阈值要连 MoveIt</h4>
+      <p>检测逻辑只依赖 numpy 数组，但因为和规划写在同一个类里，它永远拿不到一个「只加载 cv2」的运行环境。</p>
+    </div>
+    <div class="cost">
+      <span class="num">代价 2</span>
+      <h4>最关键的那句话没法单测</h4>
+      <p>「给一张图 + 深度，输出物体在 base_link 下的位姿」——这句话是这个项目真正要验证的东西，却需要一个活着的 Gazebo 和一个活着的 move_group 才能跑。</p>
+    </div>
+    <div class="cost">
+      <span class="num">代价 3</span>
+      <h4>想复用它只能起子进程</h4>
+      <p>语言层要「扫一眼桌上有什么」，只能 <code>subprocess.Popen</code> 起一个新进程，拿回一个退出码。所有失败细节都留在日志里。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. 跨层 import ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>最便宜能修的一处：一行 import 打穿了四层</h2></div>
+  <p class="lede">
+    语言层需要一张「物体尺寸表」<code>OBJECTS</code>。为了它，写了这么一行——就在 <code>arm_bench_language.py:21</code>：
+  </p>
+
+  <div class="card pad" style="display:grid;grid-template-columns:1fr 300px;gap:26px;align-items:start">
+    <div>
+      <pre style="margin:0;background:#1e242c;color:#e6edf3;border-radius:8px;padding:16px 18px;font-family:var(--mono);font-size:12.5px;overflow-x:auto"><span style="color:#8b949e"># arm_bench_language.py:21 —— 本来只想拿一张尺寸表</span>
+<span style="color:#ff9b9b">from arm_bench_visual_grasp import OBJECTS</span></pre>
+      <p style="margin:16px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.75">
+        这一行把整条依赖链拖进了「中文语言解析」这个进程：
+        <span class="chip cv">cv2</span><span class="chip cv">numpy</span><span class="chip cv">cv_bridge</span><span class="chip">tf2_ros</span><span class="chip">control_msgs</span><span class="chip mv">moveit_msgs</span><br>
+        于是「语言解析」这个纯逻辑，永远无法脱离 ROS + MoveIt + OpenCV 运行——<b>它连 import 都做不到</b>。
+      </p>
+    </div>
+    <div style="background:#fdf1f1;border:1px solid #f3c9c9;border-radius:10px;padding:16px 18px">
+      <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:#9b1c1c;margin-bottom:8px">实测代价</div>
+      <div style="font-size:13px;line-height:1.7;color:#7a1a1a">
+        <div>· 语言层不能单测</div>
+        <div>· 换前端要重装整条工具链</div>
+        <div>· 铁律 1 被静默违反</div>
+        <div style="margin-top:8px;font-family:var(--mono);font-size:11.5px">修它只要挪一张字典</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card pad" style="margin-top:16px;background:#f2fbf6;border-color:#cbe8d8">
+    <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:#0b6b43;margin-bottom:6px">这一处已经修了</div>
+    <div style="font-size:13.5px;line-height:1.75;color:#14532d">
+      那张字典现在在 <code>arm_bench/objects.py</code>（78 行，纯 stdlib，没有 import）。
+      语言层只 <code>from arm_bench.objects import LABEL_CN</code>，铁律 1 的 grep 从「有输出」变成「无输出」。
+      顺带的好处：<code>parse_command('抓红球,放到黄盒子上')</code> 现在可以在一台没装 ROS 的机器上跑。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. 五层 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>五层，每层对应真实文件</h2></div>
+  <p class="lede">
+    下面每一层都不是凭空设计的分类，而是「拆分之后真正落在磁盘上的文件」。
+    分层的意义只在于一条：<b>依赖只能向下，不能向上，不能横穿。</b>
+  </p>
+
+  <div class="stack">
+    <div class="layer" style="--c:var(--l5)">
+      <div class="layer-inner">
+        <div class="lname">
+          <span class="lcode">L5 · 任务层</span>
+          <span class="lcn">说什么</span>
+          <span class="lrole">唯一知道"用户说了什么"的地方</span>
+        </div>
+        <div class="files">
+          <div class="row"><span class="fname">arm_bench_language.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">137 行 · REPL 外壳</span></div>
+          <div class="row"><span class="fname">arm_bench/language.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">243 行 · 纯 stdlib 解析</span></div>
+          <div class="row" style="font-size:12px;color:#7b838e">禁止：<code style="font-size:11px">moveit_msgs</code> <code style="font-size:11px">cv2</code> <code style="font-size:11px">geometry_msgs</code></div>
+        </div>
+        <div class="out"><div class="lbl">对外只出</div><div class="v">人可读的日志<br>「已把红球放到黄盒子上」</div></div>
+      </div>
+    </div>
+
+    <div class="layer" style="--c:var(--l4)">
+      <div class="layer-inner">
+        <div class="lname">
+          <span class="lcode">L4 · 技能层</span>
+          <span class="lcn">做什么</span>
+          <span class="lrole">一次可复用、有明确成功判据的动作</span>
+        </div>
+        <div class="files">
+          <div class="row"><span class="fname">arm_bench_visual_grasp.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">36 行 · 薄壳</span></div>
+          <div class="row"><span class="fname">arm_bench/grasp.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">539 行 · 编排</span></div>
+          <div class="row"><span class="fname">arm_bench/skills.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">326 行 · MoveIt 动作</span></div>
+          <div class="row"><span class="fname">grasp_ball.py</span><span class="fname">chase_grasp.py</span><span class="fname">arm_bench_home.py</span></div>
+          <div class="row" style="font-size:12px;color:#1d4ed8;font-weight:600">只有这一层（和 L3 的 world.py）可以 import moveit_msgs</div>
+        </div>
+        <div class="out"><div class="lbl">对外只出</div><div class="v">成功 / 失败 + <b>原因串</b><br><span style="color:#7fd6a2">place_object() → (ok, reason)</span></div></div>
+      </div>
+    </div>
+
+    <div class="layer" style="--c:var(--l3)">
+      <div class="layer-inner">
+        <div class="lname">
+          <span class="lcode">L3 · 世界模型</span>
+          <span class="lcn">有什么</span>
+          <span class="lrole">场景是状态，不是动作</span>
+        </div>
+        <div class="files">
+          <div class="row"><span class="fname">arm_bench_planning_scene.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">128 行 · 入口节点</span></div>
+          <div class="row"><span class="fname">arm_bench/world.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">102 行 · 唯一的 L3 出口</span></div>
+          <div class="row" style="font-size:12px;color:#7b838e">入口节点与 <span class="mono">grasp.py</span> 都只调 world，不再各写一份 OBJECTS</div>
+        </div>
+        <div class="out"><div class="lbl">对外只出</div><div class="v">/apply_planning_scene<br><em>is_diff=true 增量下发</em></div></div>
+      </div>
+    </div>
+
+    <div class="layer" style="--c:var(--l2)">
+      <div class="layer-inner">
+        <div class="lname">
+          <span class="lcode">L2 · 感知层</span>
+          <span class="lcn">看到什么</span>
+          <span class="lrole">只负责"图 → 检测框"</span>
+        </div>
+        <div class="files">
+          <div class="row"><span class="fname">arm_bench_object_detector.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">184 行 · 检测节点</span></div>
+          <div class="row"><span class="fname">arm_bench/vision.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">211 行 · 相机 + TF</span></div>
+          <div class="row"><span class="fname">arm_bench/detection.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">82 行 · 纯函数</span></div>
+          <div class="row"><span class="fname">go2_vision/target_localizer.py</span><span class="fname">yolo_detector.py</span></div>
+          <div class="row" style="font-size:12px;color:#7b838e">允许：<code style="font-size:11px">cv2</code> <code style="font-size:11px">numpy</code> <code style="font-size:11px">tf2</code>　禁止：<code style="font-size:11px">moveit_msgs</code></div>
+        </div>
+        <div class="out"><div class="lbl">对外只出</div><div class="v">/arm/vision/detections<br><em>vision_msgs/Detection2DArray</em></div></div>
+      </div>
+    </div>
+
+    <div class="layer" style="--c:var(--l1)">
+      <div class="layer-inner">
+        <div class="lname">
+          <span class="lcode">L1 · 硬件 / 仿真</span>
+          <span class="lcn">怎么动</span>
+          <span class="lrole">唯一的 KPI 是"可替换"</span>
+        </div>
+        <div class="files">
+          <div class="row"><span class="fname">arm_bench.launch.py</span><span class="fname">arm_moveit.launch.py</span></div>
+          <div class="row" style="font-size:12px;color:#7b838e">Gazebo · gz_ros2_control · 3 个控制器 · robot_state_publisher · move_group</div>
+        </div>
+        <div class="out"><div class="lbl">对外只出</div><div class="v">/joint_states · /clock<br>/arm/camera/* · TF</div></div>
+      </div>
+    </div>
+
+    <div class="stack-legend">
+      <span><i class="down"></i>允许：向下调用 / 依赖</span>
+      <span><i class="up"></i>禁止：下层知道自己被谁调用</span>
+    </div>
+  </div>
+
+  <p class="lede" style="margin-top:22px;margin-bottom:0">
+    为什么是这五层，而不是别的切法？因为它们的<b>变化频率不同</b>：
+    L1 换硬件才变、L2 换相机/换检测器才变、L3 物体增加才变、L4 动作定义才变、L5 换交互方式才变。
+    变化频率不同的东西放在同一个文件里，每次改动都得重新理解整个文件——这就是那 1040 行真正的成本。
+  </p>
+</section>
+
+<!-- ============ 4. 铁律 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>三条铁律，用 grep 检查</h2></div>
+  <p class="lede">
+    「分层」如果不写成能自动检查的规则，三个月后一定会被一句「先这样，回头再改」吃掉。
+    下面三条每一条都只要一行 grep，右边是<b>今天跑出来的真实结果</b>。
+  </p>
+
+  <div class="rules">
+    <div class="rule ok">
+      <div class="mark">✓</div>
+      <div>
+        <h4>铁律 1 · L5 不许直接或间接依赖 MoveIt / OpenCV</h4>
+        <pre>grep -nE "^\s*(from|import)\s+(moveit_msgs|cv2|geometry_msgs)" \
+  ros2_ws/src/go2_description/scripts/arm_bench_language.py
+<span class="c"># 直接 import：干净（无输出）</span>
+<span class="r"># 改造前：第 21 行 from arm_bench_visual_grasp import OBJECTS</span>
+<span class="r">#         间接把 cv2 / numpy / cv_bridge / moveit_msgs 全拉进来 → 违反</span>
+<span class="g"># 改造后：OBJECTS 搬到 arm_bench/objects.py，这行已删</span>
+<span class="g">#         现在整条链路只剩 arm_bench.language + arm_bench.objects → 无输出</span></pre>
+      </div>
+      <div class="verdict ok">已修</div>
+    </div>
+
+    <div class="rule ok">
+      <div class="mark">✓</div>
+      <div>
+        <h4>铁律 2 · L2 感知层不许 import moveit_msgs</h4>
+        <pre>grep -rln "moveit_msgs" \
+  ros2_ws/src/go2_description/scripts/arm_bench_object_detector.py \
+  ros2_ws/src/go2_description/scripts/arm_bench/{detection,vision}.py \
+  ros2_ws/src/go2_vision/scripts/
+<span class="c"># 无输出（拆出来的 detection.py / vision.py 也没破这条）</span></pre>
+      </div>
+      <div class="verdict ok">符合</div>
+    </div>
+
+    <div class="rule ok">
+      <div class="mark">✓</div>
+      <div>
+        <h4>铁律 3 · moveit_msgs 只出现在 L3 与 L4 的固定文件里</h4>
+        <pre>grep -rlE "^\s*(from|import)\s+moveit_msgs" --include=*.py ros2_ws/src/
+<span class="g">arm_bench/world.py</span>              <span class="c"># L3 场景下发</span>
+<span class="g">arm_bench/skills.py</span>             <span class="c"># L4 规划动作</span>
+<span class="g">arm_bench_planning_scene.py</span>     <span class="c"># L3 的入口节点</span>
+<span class="g">grasp_ball.py   chase_grasp.py</span> <span class="c"># 旧的整车抓取，尚未重构</span>
+<span class="c"># 恰好 5 个文件，全部登记在案 ✓</span></pre>
+        <p style="margin:10px 0 0;font-size:12.5px;color:#5b6470;line-height:1.65">
+          <b>这条改写过了。</b>原来是「只有 L4 可以 import moveit_msgs」——但 L3 的职责就是往
+          MoveIt 下发 planning scene，它<b>必须</b>是 moveit_msgs。原写法自相矛盾，拆到 L3 时才暴露出来。
+          规则改成「只允许 L3 与 L4，且文件名写死在检查脚本里」。
+        </p>
+      </div>
+      <div class="verdict ok">符合</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. 判据 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>什么时候才该拆成节点</h2></div>
+  <p class="lede">
+    这是本文里最重要的一条工程判断：<b>分层 ≠ 拆节点</b>。
+    节点是进程，拆一个节点就多一次序列化、多一个崩溃点、多一个要单独起的终端。所以拿三个问题卡一下：
+  </p>
+
+  <div class="flow">
+    <div class="q"><div class="qn">Q1</div><div class="qt">需要独立频率吗？</div></div>
+    <div class="arrow-x">→</div>
+    <div class="q"><div class="qn">Q2</div><div class="qt">需要崩溃隔离吗？</div></div>
+    <div class="arrow-x">→</div>
+    <div class="q"><div class="qn">Q3</div><div class="qt">需要被别的进程单独起吗？</div></div>
+    <div class="arrow-x">→</div>
+    <div class="verdict-box no">三个都是「否」<br><span style="font-weight:400;font-size:12px">别拆</span></div>
+  </div>
+
+  <div class="flow-foot">
+    任一为「是」→ 才考虑拆节点。按这个判据：<b>pick / place 不该拆</b>。
+    它本来就是「调一次、等结果」，拆成 action server 只会把这句话变成 goal / feedback / cancel 一套编排，凭空多出失败点。
+  </div>
+
+  <div class="tbl-wrap" style="margin-top:20px">
+    <table class="tbl">
+      <thead><tr><th>候选</th><th>独立频率</th><th>崩溃隔离</th><th>单独起</th><th>结论</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">检测器</td><td>是 · 30 Hz</td><td>是 · cv2 会挂</td><td>是 · RS 要看</td><td><span class="pill node">节点</span></td><td>已经是，保持</td></tr>
+        <tr><td class="mono">场景发布</td><td>是 · 物体动了就发</td><td>否</td><td>是 · --interactive</td><td><span class="pill node">节点</span></td><td>已经是，保持</td></tr>
+        <tr><td class="mono">scan</td><td>否 · 一次性</td><td>否</td><td>是 · scan_only</td><td><span class="pill nonode">暂不拆</span></td><td>用参数表达，够用</td></tr>
+        <tr><td class="mono">pick / place</td><td>否 · 一次性动作</td><td>否</td><td>否</td><td><span class="pill nonode">不拆</span></td><td>拆了只增加编排成本</td></tr>
+        <tr><td class="mono">语言</td><td>否 · 交互</td><td>否</td><td>否</td><td><span class="pill nonode">不拆</span></td><td>本来就是一个前端</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 6. 拆文件 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>所以：先拆文件，不拆节点</h2></div>
+  <p class="lede">
+    把 1162 行按职责拆开，<b>话题名、参数名、节点名一个都不改</b>。
+    这样 RS 零感知、<code>start_arm_bench.sh</code> 零改动、随时可以回退——而上面说的三个代价一次性全部消失。
+    下面左边是拆之前，右边是<b>现在磁盘上的真实文件</b>（行数用 <code>wc -l</code> 量过）。
+  </p>
+
+  <div class="trees">
+    <div class="tree before">
+      <div class="th">拆之前 · 1 个文件 1162 行</div>
+      <pre><span class="dim">scripts/</span>
+├── arm_bench_visual_grasp.py   <span class="dim">1162 行 / 39 方法 / 6 职责</span>
+├── arm_bench_object_detector.py <span class="dim">184 行</span>
+└── arm_bench_language.py        <span class="dim">353 行</span>
+                                 <span class="dim">└─ import ←── 从上面硬拽</span></pre>
+    </div>
+
+    <div class="tree after">
+      <div class="th">现在 · 每个文件一件事（共 2266 行）</div>
+      <pre><span class="dim">scripts/</span>
+├── arm_bench_visual_grasp.py    <span class="dim">36   薄壳：把 -p 参数交给 grasp</span>
+├── arm_bench_language.py        <span class="dim">137  REPL 外壳（解析搬到 language.py）</span>
+├── arm_bench_planning_scene.py  <span class="dim">128  复用 world.py（删掉第二份 OBJECTS）</span>
+├── arm_bench_object_detector.py <span class="dim">184  L2 检测节点，未动</span>
+└── <span style="color:#5b21b6">arm_bench/</span>
+    ├── constants.py  <span class="dim">18   关节名 / 帧名 / 朝向</span>
+    ├── objects.py    <span class="dim">78   OBJECTS 表（解掉第 21 行 import）</span>
+    ├── geometry.py   <span class="dim">100  纯数学：反投影 / 抓取位 / 放置位</span>
+    ├── detection.py  <span class="dim">82   纯函数：图 + 深度 → 点</span>
+    ├── scene.py      <span class="dim">64   场景记忆：融合 / 取最优</span>
+    ├── world.py      <span class="dim">102  planning scene（唯一 L3 出口）</span>
+    ├── vision.py     <span class="dim">211  相机订阅 + TF + 标注图</span>
+    ├── skills.py     <span class="dim">326  MoveIt 动作：move / ik / cartesian / grip</span>
+    ├── language.py   <span class="dim">243  中文解析（纯 stdlib）</span>
+    └── grasp.py      <span class="dim">539  组合根：参数 + 六步编排</span></pre>
+    </div>
+  </div>
+
+  <div class="tbl-wrap" style="margin-top:20px">
+    <table class="tbl">
+      <thead><tr><th>拆分</th><th>为什么这么切</th><th>立刻得到什么</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">detection.py</td><td>现在的检测只依赖 numpy 数组，根本不需要 ROS</td><td>拿几张录好的图跑回归，不用起 Gazebo</td></tr>
+        <tr><td class="mono">geometry.py</td><td>反投影 + TF 是纯数学，现在混在节点里</td><td>「为什么 z 差 3.6cm」可以离线复现</td></tr>
+        <tr><td class="mono">world.py</td><td>场景是<b>状态</b>，生命周期和「抓一次」不同</td><td>物体被挪动时只需重发 diff</td></tr>
+        <tr><td class="mono">skills.py</td><td>上层要的是<b>原因</b>，不是日志行</td><td>语言层/RS 能直接显示「失败：目标不在视野内」</td></tr>
+        <tr><td class="mono">objects.py</td><td>尺寸表被两个层需要，它自己就该独立</td><td>铁律 1 的 grep 变空</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 7. 路线 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>迁移路线：每一步都能跑、都能回退</h2></div>
+  <p class="lede">
+    这个项目真正的风险不是「架构不够好」，是<b>明明有一个能演示的系统，却因为重构把它弄坏了</b>。
+    所以顺序按「能不能随时停下」来排，不按「理想架构」来排。
+  </p>
+
+  <div class="timeline">
+    <div class="step done s0">
+      <div class="step-body">
+        <div><div class="t">先把 Ubuntu 上那份未提交改动提交备份<span class="done-badge">df21713</span></div><div class="s">arm_bench_planning_scene.py 等 5 个文件只存在于那台机器的磁盘上</div></div>
+        <div class="risk low">零风险</div>
+        <div class="accept"><b>验收</b>git status 干净</div>
+      </div>
+    </div>
+    <div class="step done">
+      <div class="step-body">
+        <div><div class="t">抽出 detection.py + geometry.py 纯函数<span class="done-badge">在包里</span></div><div class="s">不改任何话题、参数</div></div>
+        <div class="risk low">低</div>
+        <div class="accept"><b>验收</b>scan_only 输出与现在逐位一致</div>
+      </div>
+    </div>
+    <div class="step done">
+      <div class="step-body">
+        <div><div class="t">world.py（先只在进程内用，不发话题）<span class="done-badge">在包里</span></div><div class="s">把 OBJECTS 变成 CollisionObject</div></div>
+        <div class="risk low">低</div>
+        <div class="accept"><b>验收</b>场景物体位置与 arm_bench.sdf 一致</div>
+      </div>
+    </div>
+    <div class="step done">
+      <div class="step-body">
+        <div><div class="t">skills.py 返回 (ok, reason)，run() 改为调用它<span class="done-badge">已测通</span></div><div class="s">L4 第一次有了可编程的结果</div></div>
+        <div class="risk mid">中</div>
+        <div class="accept"><b>验收</b>抓红球 → 放黄盒子全流程通过</div>
+      </div>
+    </div>
+    <div class="step done">
+      <div class="step-body">
+        <div><div class="t">language.py 去掉对 arm_bench_visual_grasp 的 import<span class="done-badge">已修</span></div><div class="s">OBJECTS 挪到 objects.py</div></div>
+        <div class="risk low">低</div>
+        <div class="accept"><b>验收</b>铁律 1 的 grep 为空</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-body">
+        <div><div class="t">语言层 subprocess → 同进程调用（或 action）</div><div class="s">必须等在 L4 有 (ok, reason) 之后</div></div>
+        <div class="risk mid">中</div>
+        <div class="accept"><b>验收</b>失败时能打印结构化原因</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8. 外部契约 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>外部契约：RS 只依赖这 12 个东西</h2></div>
+  <p class="lede">
+    Robot Studio 用 <code>configs/robots/go2_arm_rm75.yaml</code> 描述这台臂，里面全部是可核对的硬编码：
+    改动这 12 项中任何一项，都要先通知 RS。
+  </p>
+
+  <div class="contract">
+    <h3>go2_arm_rm75.yaml · 已实测</h3>
+    <div class="sub">3 topics + 2 frames + 7 joints</div>
+    <div class="contract-grid">
+      <div>
+        <h5>话题（3）</h5>
+        <ul>
+          <li>/arm/camera/image</li>
+          <li>/arm/camera/depth_image</li>
+          <li>/vision/image_annotated</li>
+        </ul>
+      </div>
+      <div>
+        <h5>帧（2）</h5>
+        <ul>
+          <li>base_frame: base_link</li>
+          <li>flange_frame: Link7</li>
+        </ul>
+      </div>
+      <div>
+        <h5>关节（7）</h5>
+        <ul>
+          <li>joint1 .. joint7</li>
+          <li style="color:#8fa6ba">范围与 arm_bench 一致</li>
+        </ul>
+      </div>
+    </div>
+    <div class="warn">
+      <b>已知不一致：</b><code style="background:rgba(255,255,255,.12);color:#fff">/vision/image_annotated</code> 是 <b>go2_vision 狗载 YOLO 管线</b>的输出（订阅 <code style="background:rgba(255,255,255,.12);color:#fff">/camera/&lt;name&gt;/image</code>），
+      而 arm_bench 自己的标注图发在 <code style="background:rgba(255,255,255,.12);color:#fff">/arm/vision/image_annotated</code>。
+      所以在 arm_bench profile 下这一路永远是「无数据」——除非另外起狗的 YOLO 节点（那又是另一个相机、另一条管线）。
+      契约上应该二选一。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 9. 不做 ============ -->
+<section>
+  <div class="sec-head"><span class="sec-num">09</span><h2>明确不做的事</h2></div>
+  <p class="lede">写清「不做什么」比写「要做什么」更能防止半年后的自己被绕回去。</p>
+
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr><th>不做</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td style="font-weight:600">拆纯转发节点</td><td>每个节点都是一次序列化 + 一次调度；转发节点只增加延迟和故障点，不增加隔离</td></tr>
+        <tr><td style="font-weight:600">引入行为树（py_trees）</td><td>现在是「一次抓取」的线性流程。行为树会把现在的线性 REPL 变成 800 行的树。等出现多任务并发/抢占/恢复需求再说</td></tr>
+        <tr><td style="font-weight:600">现在就统一 vision_sim 与 go2_vision</td><td>一个是仿真验证环境、一个是狗载真机管线。合并收益要等两边话题稳定后再评估。<b>先写清结论，别动代码</b></td></tr>
+        <tr><td style="font-weight:600">为分层而分层（每层一个 msg）</td><td>层间传递用 dataclass 就够；只有跨进程才需要 msg</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="closing">
+  <p class="big">ROS 已经把「层」给你了。你缺的不是分层，是<b>「层写在哪」</b>。</p>
+  <p>把隐含的边界变成显式的、能 grep 的、写在纸上的边界——收益远大于改代码结构。</p>
+  <p>而每一步都要守住同一件事：<b>动完之后，仍然能用一条命令抓起那颗红球。</b></p>
+  <div class="sig">go2_dev · docs/architecture.html · 配 docs/architecture.md 阅读</div>
+</div>
+
+</div>
+</body>
+</html>

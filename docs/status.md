@@ -77,7 +77,8 @@
 - 入口脚本变薄壳:`arm_bench_visual_grasp.py` 1162→36 行、`arm_bench_language.py`
   353→137 行、`arm_bench_planning_scene.py` 179→128 行(去掉自带的第二份 `OBJECTS`)
 - 新包 `scripts/arm_bench/`:`constants` / `objects` / `geometry` / `detection` /
-  `scene` / `world` / `vision` / `skills` / `language` / `grasp`,共 14 个文件 2266 行
+  `scene` / `world` / `vision` / `skills` / `language` / `grasp` / `palette`,
+  共 11 个模块（臂台脚本合计约 3.3k 行）
 - 五层依赖只向下:L5 `language.py`(纯 stdlib)→ L4 `grasp.py`+`skills.py` →
   L3 `world.py`/`arm_bench_planning_scene.py` → L2 `vision.py`/`detection.py`/检测节点
   → L1 launch;详见 `docs/architecture.md` 与 `docs/architecture.html`

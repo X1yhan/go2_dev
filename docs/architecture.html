@@ -486,7 +486,7 @@
   <div class="card pad" style="margin-top:16px;background:#f2fbf6;border-color:#cbe8d8">
     <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:#0b6b43;margin-bottom:6px">这一处已经修了</div>
     <div style="font-size:13.5px;line-height:1.75;color:#14532d">
-      那张字典现在在 <code>arm_bench/objects.py</code>（78 行，纯 stdlib，没有 import）。
+      那张字典现在在 <code>arm_bench/objects.py</code>（106 行，纯 stdlib，没有 import）。
       语言层只 <code>from arm_bench.objects import LABEL_CN</code>，铁律 1 的 grep 从「有输出」变成「无输出」。
       顺带的好处：<code>parse_command('抓红球,放到黄盒子上')</code> 现在可以在一台没装 ROS 的机器上跑。
     </div>
@@ -511,7 +511,7 @@
         </div>
         <div class="files">
           <div class="row"><span class="fname">arm_bench_language.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">137 行 · REPL 外壳</span></div>
-          <div class="row"><span class="fname">arm_bench/language.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">243 行 · 纯 stdlib 解析</span></div>
+          <div class="row"><span class="fname">arm_bench/language.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">249 行 · 纯 stdlib 解析</span></div>
           <div class="row" style="font-size:12px;color:#7b838e">禁止：<code style="font-size:11px">moveit_msgs</code> <code style="font-size:11px">cv2</code> <code style="font-size:11px">geometry_msgs</code></div>
         </div>
         <div class="out"><div class="lbl">对外只出</div><div class="v">人可读的日志<br>「已把红球放到黄盒子上」</div></div>
@@ -527,7 +527,7 @@
         </div>
         <div class="files">
           <div class="row"><span class="fname">arm_bench_visual_grasp.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">36 行 · 薄壳</span></div>
-          <div class="row"><span class="fname">arm_bench/grasp.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">539 行 · 编排</span></div>
+          <div class="row"><span class="fname">arm_bench/grasp.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">553 行 · 编排</span></div>
           <div class="row"><span class="fname">arm_bench/skills.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">326 行 · MoveIt 动作</span></div>
           <div class="row"><span class="fname">grasp_ball.py</span><span class="fname">chase_grasp.py</span><span class="fname">arm_bench_home.py</span></div>
           <div class="row" style="font-size:12px;color:#1d4ed8;font-weight:600">只有这一层（和 L3 的 world.py）可以 import moveit_msgs</div>
@@ -560,8 +560,8 @@
           <span class="lrole">只负责"图 → 检测框"</span>
         </div>
         <div class="files">
-          <div class="row"><span class="fname">arm_bench_object_detector.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">184 行 · 检测节点</span></div>
-          <div class="row"><span class="fname">arm_bench/vision.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">211 行 · 相机 + TF</span></div>
+          <div class="row"><span class="fname">arm_bench_object_detector.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">186 行 · 检测节点</span></div>
+          <div class="row"><span class="fname">arm_bench/vision.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">218 行 · 相机 + TF</span></div>
           <div class="row"><span class="fname">arm_bench/detection.py</span><span class="dim" style="font-size:11.5px;color:#7b838e">82 行 · 纯函数</span></div>
           <div class="row"><span class="fname">go2_vision/target_localizer.py</span><span class="fname">yolo_detector.py</span></div>
           <div class="row" style="font-size:12px;color:#7b838e">允许：<code style="font-size:11px">cv2</code> <code style="font-size:11px">numpy</code> <code style="font-size:11px">tf2</code>　禁止：<code style="font-size:11px">moveit_msgs</code></div>
@@ -713,23 +713,24 @@
     </div>
 
     <div class="tree after">
-      <div class="th">现在 · 每个文件一件事（共 2266 行）</div>
+      <div class="th">现在 · 每个文件一件事（11 个模块，约 3.3k 行）</div>
       <pre><span class="dim">scripts/</span>
 ├── arm_bench_visual_grasp.py    <span class="dim">36   薄壳：把 -p 参数交给 grasp</span>
 ├── arm_bench_language.py        <span class="dim">137  REPL 外壳（解析搬到 language.py）</span>
 ├── arm_bench_planning_scene.py  <span class="dim">128  复用 world.py（删掉第二份 OBJECTS）</span>
-├── arm_bench_object_detector.py <span class="dim">184  L2 检测节点，未动</span>
+├── arm_bench_object_detector.py <span class="dim">186  L2 检测节点（颜色表搬到 palette.py）</span>
 └── <span style="color:#5b21b6">arm_bench/</span>
     ├── constants.py  <span class="dim">18   关节名 / 帧名 / 朝向</span>
-    ├── objects.py    <span class="dim">78   OBJECTS 表（解掉第 21 行 import）</span>
-    ├── geometry.py   <span class="dim">100  纯数学：反投影 / 抓取位 / 放置位</span>
+    ├── objects.py    <span class="dim">106  OBJECTS 表：4 个测试块 + 3 个日用品</span>
+    ├── palette.py    <span class="dim">45   HSV 色槽 + 深度门（检测与抓取共用）</span>
+    ├── geometry.py   <span class="dim">115  纯数学：反投影 / 抓取位 / 放置位</span>
     ├── detection.py  <span class="dim">82   纯函数：图 + 深度 → 点</span>
     ├── scene.py      <span class="dim">64   场景记忆：融合 / 取最优</span>
     ├── world.py      <span class="dim">102  planning scene（唯一 L3 出口）</span>
-    ├── vision.py     <span class="dim">211  相机订阅 + TF + 标注图</span>
+    ├── vision.py     <span class="dim">218  相机订阅 + TF + 台面过滤 + 标注图</span>
     ├── skills.py     <span class="dim">326  MoveIt 动作：move / ik / cartesian / grip</span>
-    ├── language.py   <span class="dim">243  中文解析（纯 stdlib）</span>
-    └── grasp.py      <span class="dim">539  组合根：参数 + 六步编排</span></pre>
+    ├── language.py   <span class="dim">249  中文解析（纯 stdlib）</span>
+    └── grasp.py      <span class="dim">553  组合根：参数 + 六步编排</span></pre>
     </div>
   </div>
 

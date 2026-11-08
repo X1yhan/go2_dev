@@ -33,7 +33,8 @@
   yellow_box (0.265,0.175)、green_cylinder (0.135,0.215)、
   milk_carton (0.135,-0.115)、water_cup (0.145,0.09)、tissue_box (0.09,-0.235)。
   都写进了 SDF 和 `objects.py` 的 `'default'`。
-- 扫描：默认视角 5 个，走完 `LOOK_POSES` 多视角累计 **7/7**，位置误差 1~3 cm。
+- 扫描：默认视角 5 个；走完 `LOOK_POSES` 多视角累计 6~7 个（牛奶盒在
+  `x=0.135`、贴着视野边缘，时漏时中），位置误差 1~3 cm。
 - **红球抓放贯通**：`PLACE SUCCESS red_ball -> yellow_box: err_xy=0.006`
   （6 mm）。这是本轮第一次真正稳定的抓放。
 - 牛奶盒：定位已准（实测 0.152 vs 真值 0.135），但下降到抓取位后

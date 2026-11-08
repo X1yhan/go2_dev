@@ -16,6 +16,21 @@ BESIDE_ANGLES_DEG = (0, 90, -90, 45, -45, 135, -135, 180)
 BESIDE_PAD = 0.02
 
 
+# Everything the bench can grasp stands on the table, whose top face is
+# base_link z=0.  A detection that lands outside this box is not an object --
+# it is the robot itself, the floor, or a bad depth sample.  This matters for
+# the white class, whose mask also matches the grey background.
+TABLE_X = (-0.05, 0.45)
+TABLE_Y = 0.42
+TABLE_Z = (-0.04, 0.28)
+
+
+def on_table(x, y, z):
+    """True when a base_link point plausibly sits on the bench top."""
+    return (TABLE_X[0] <= x <= TABLE_X[1] and abs(y) <= TABLE_Y
+            and TABLE_Z[0] <= z <= TABLE_Z[1])
+
+
 def deproject(u, v, z, k):
     """Pixel + depth -> camera-frame (x, y, z), k = CameraInfo.k."""
     fx, fy, cx, cy = k[0], k[4], k[2], k[5]

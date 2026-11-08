@@ -19,8 +19,8 @@ from shape_msgs.msg import SolidPrimitive
 from arm_bench.constants import BASE_FRAME
 
 TABLE_ID = 'table'
-TABLE_DIMS = [0.6, 0.6, 0.6]
-TABLE_CENTRE = (0.0, 0.0, -0.3)
+TABLE_DIMS = [0.9, 0.8, 0.6]
+TABLE_CENTRE = (0.08, 0.0, -0.3)
 
 APPLY_SERVICE = '/apply_planning_scene'
 

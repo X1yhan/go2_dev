@@ -6,6 +6,66 @@
 
 ## 已完成
 
+### 仿真台面加日用品(`2026-11-08`)
+
+把 arm_bench 从"4 个彩色测试块"扩成"4 个测试块 + 3 个日用品"，台面同时放大。
+
+- 台面 `0.6 x 0.6` → **`0.9 x 0.8 m`**（中心挪到 `x=0.08`，台面仍 `z=0.6`；
+  台面高度是全链路标定基准，不能动）。`world.py` 的 `TABLE_DIMS`/`TABLE_CENTRE` 同步。
+- 新增 model：`milk_carton`(6.5×6.5×7.5cm 纯白)、`water_cup`(φ7×7.5cm 青)、
+  `tissue_box`(16×8×6cm 紫)。都带 `OdometryPublisher`，`/model/<name>/odometry`
+  与 planning scene 自动生效。
+- 三个新物体占 **白 / 青(H79-93) / 紫(H136-165)** 三个空色槽；`green_cylinder`
+  旧区间 35-90 与青重叠，收窄为 45-78。颜色表集中到
+  `scripts/arm_bench/palette.py`（纯数据，检测节点与抓取节点共用）。
+- 白色不能靠色相区分（远处地面也是灰白）：用距离门
+  `MAX_DEPTH = {'milk_carton': 0.65}`，并且把"只取最大轮廓"改成"取通过深度门
+  的最大轮廓"，否则地面那块更大的白斑会把牛奶盒顶掉。
+- `geometry.on_table()` 丢弃落到台面外的点（白色最容易把机械臂自己/背景认成
+  物体，实测出现过 `base=(0.524, 0.564, -0.658)` 的假点）。注意必须在 TF 变换到
+  base_link **之后**过滤，在相机系过滤会把几乎全部检测丢掉。
+- `objects.py` 新增 `grip_width` 键：纸巾盒长边 16cm，夹爪横向夹 8cm 那面。
+- 中文别名：牛奶盒/牛奶/奶盒、水杯/杯子/马克杯、纸巾盒/纸巾/纸盒/抽纸。
+
+**摆放与实测（Ubuntu，`ROS_DOMAIN_ID=42` `IGN_PARTITION=go2look`）**
+
+- 七个物体的最终位置：red_ball (0.215,0)、blue_cube (0.265,-0.175)、
+  yellow_box (0.265,0.175)、green_cylinder (0.135,0.215)、
+  milk_carton (0.135,-0.115)、water_cup (0.145,0.09)、tissue_box (0.09,-0.235)。
+  都写进了 SDF 和 `objects.py` 的 `'default'`。
+- 扫描：默认视角 5 个，走完 `LOOK_POSES` 多视角累计 **7/7**，位置误差 1~3 cm。
+- **红球抓放贯通**：`PLACE SUCCESS red_ball -> yellow_box: err_xy=0.006`
+  （6 mm）。这是本轮第一次真正稳定的抓放。
+- 牛奶盒：定位已准（实测 0.152 vs 真值 0.135），但下降到抓取位后
+  `arm did not settle at the grasp pose`（指尖与盒体互相顶住），**仍未解决**。
+
+**这轮踩到并修掉的四个坑（都很隐蔽，记下来省下次的时间）**
+
+1. **目标物别登记进 planning scene**。`set_scene()` 原来把所有看见的物体都
+   发成 `CollisionObject`，包括要抓的那个——抓取位姿必然与它自己碰撞，
+   于是每个物体都是 `Cartesian descent 0.00` → `fallback MoveIt` →
+   `descent failed`，看起来像"腕部够不到"，实际是规划器在拒绝。
+   现在只发 **桌面 + 放置目标**；其余日用品定位误差（2~6 cm）比它们能
+   提供的余量还大，登记进去只会制造假碰撞。
+2. **DetachableJoint 的 `parent_link` 必须写 `Link7`**。原来写
+   `gripper_base_link`，但 URDF→SDF 转换把它并进了 Link7，插件加载时报
+   `[Err] DetachableJoint.cc:62 Link with name gripper_base_link not found`
+   然后静默失效——吸附**从来没生效过**，球全靠摩擦力，搬运途中甩飞。
+   改成 `Link7` 后插件正常；但它在模型载入时就把目标焊在法兰上（保持 t=0
+   的相对位姿，所以球仍在桌面），因此 `grasp.run()` 开头要先发一次
+   `/target_ball/detach`，否则臂一动球就被拖走、视觉再也找不到它。
+3. **桌上物体的 z 不要用深度像素**。白色牛奶盒的掩膜会把桌面像素算进去，
+   取"最近深度"就取到桌子，z 掉到 -0.019（应为 +0.0375），抓取位姿整体下沉
+   4 cm。现在 `detect_all()` 一律 `table_prior=True`（z 取类别 `half_height`），
+   只有放置复检才用实测顶面减半高。
+4. **球和牛奶盒初始穿插**。球 (0.22,0,r=0.035) 与牛奶盒 (0.175,-0.065,半对角
+   0.046) 圆心距 0.079 < 0.081，GZ 物理解算把球顶开，球滚到 r≈0.30 的
+   不可达处，于是"每次都是目标不可达"。留 10 cm 以上间距即可。
+
+**仍然成立的经验规律**：工具朝下时 `r=sqrt(x²+y²) <= 0.22` 稳，
+`r≈0.27~0.32` 基本必失败；而相机视野要求 `x>0.21`。所以"默认视角全都看得见"
+和"全都抓得到"在当前夹爪+腕部相机的几何下**无法同时满足**——需要多视角扫描。
+
 ### 分层重构 arm_bench(`2026-11-06`)
 
 `arm_bench_visual_grasp.py` 原来是一个 1162 行的类(`VisualGrasp`),横跨检测/几何/

@@ -57,11 +57,16 @@ def test_language():
 
 def test_objects():
     check('labels', sorted(objects.OBJECTS), sorted(
-        ['red_ball', 'blue_cube', 'green_cylinder', 'yellow_box']))
+        ['red_ball', 'blue_cube', 'green_cylinder', 'yellow_box',
+         'milk_carton', 'water_cup', 'tissue_box']))
     check('model', objects.OBJECTS['red_ball']['model'], 'target_ball')
     check_near('ball_r', objects.OBJECTS['red_ball']['radius'], 0.035)
     check_near('held_sphere', objects.held_width(objects.OBJECTS['red_ball']), 0.07)
     check_near('held_box', objects.held_width(objects.OBJECTS['yellow_box']), 0.10)
+    # The tissue box is long, but the fingers close across its 8 cm side.
+    check_near('held_tissue', objects.held_width(objects.OBJECTS['tissue_box']),
+               0.08)
+    check_near('held_cup', objects.held_width(objects.OBJECTS['water_cup']), 0.070)
 
 
 def test_geometry():

@@ -143,11 +143,16 @@ def _gz_robot_description(urdf, pkg_share, gripper, camera, width, height,
     if gripper != 'none':
         # Keep the grasped target rigidly attached to the gripper while the
         # arm moves.  The DetachableJoint is released again at place time.
+        # NOTE: the parent link must be one that survives the URDF -> SDF
+        # conversion.  gazebo merges the fixed gripper_base_link into Link7,
+        # so naming gripper_base_link here makes the plugin fail with
+        # "[Err] Link with name gripper_base_link not found" and the target
+        # is then held by friction only.
         extra += (
             '<gazebo>'
             '<plugin filename="ignition-gazebo-detachable-joint-system" '
             'name="ignition::gazebo::systems::DetachableJoint">'
-            '<parent_link>gripper_base_link</parent_link>'
+            '<parent_link>Link7</parent_link>'
             '<child_model>target_ball</child_model>'
             '<child_link>link</child_link>'
             '<detach_topic>/target_ball/detach</detach_topic>'
@@ -262,6 +267,12 @@ def generate_launch_description():
                 '/model/green_cylinder/odometry@nav_msgs/msg/Odometry'
                 '[ignition.msgs.Odometry',
                 '/model/yellow_box/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
+                '/model/milk_carton/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
+                '/model/water_cup/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
+                '/model/tissue_box/odometry@nav_msgs/msg/Odometry'
                 '[ignition.msgs.Odometry',
             ]
             nodes.append(TimerAction(period=2.0, actions=[

@@ -139,7 +139,6 @@ class VisionFrontend:
         x, y, z = geometry.deproject(u, v, z, self.camera_info.k)
         if cfg['shape'] == 'sphere':
             x, y, z = geometry.on_sphere(x, y, z, cfg['radius'])
-
         point = PointStamped()
         point.header.stamp = self.depth.header.stamp
         point.header.frame_id = self.camera_frame
@@ -163,6 +162,11 @@ class VisionFrontend:
             # Verification (e.g. object on top of another): use the
             # measured top surface minus the class half height.
             base_point.z = base_point.z - cfg['half_height']
+
+        if not geometry.on_table(base_point.x, base_point.y, base_point.z):
+            # Only things standing on the bench are worth reporting; this is
+            # what keeps the white class from latching onto the robot itself.
+            return None
 
         if publish_debug:
             detection.draw_detection(
@@ -189,8 +193,11 @@ class VisionFrontend:
         for label in labels:
             if label not in self.objects:
                 continue
-            is_sphere = self.objects[label]['shape'] == 'sphere'
-            result = self.detect_label(label, table_prior=is_sphere)
+            # Everything lying on the bench sits on a known plane, so take z
+            # from the class dimensions instead of the depth pixel: a stray
+            # table pixel in the mask (the white class is the worst offender)
+            # otherwise sinks the estimate by a few cm.
+            result = self.detect_label(label, table_prior=True)
             if result is not None:
                 found[label] = result
         return found

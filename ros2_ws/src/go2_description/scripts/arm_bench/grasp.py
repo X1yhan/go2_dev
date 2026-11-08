@@ -32,7 +32,7 @@ from arm_bench.objects import OBJECTS, held_width
 from arm_bench.scene import SCAN_RANK, SceneModel
 from arm_bench.skills import ArmSkills
 from arm_bench.vision import VisionFrontend
-from arm_bench_object_detector import HSV_RANGES
+from arm_bench.palette import HSV_RANGES
 
 COLOR_TOPIC = '/arm/camera/image'
 DEPTH_TOPIC = '/arm/camera/depth_image'
@@ -183,6 +183,13 @@ class VisualGrasp(Node):
         """Table plus every object the scan has located."""
         objects = [world.table_object()]
         for label, cfg in OBJECTS.items():
+            # Only the place target is worth reserving.  The target itself is
+            # what we have to touch, and every other prop is scenery whose
+            # localisation error (2-6 cm at this range) is larger than the
+            # clearance it would protect, so publishing it only makes the
+            # planner refuse grasps that physically succeed.
+            if label != self.place_class:
+                continue
             center = self.scene.seen.get(label)
             if center is None:
                 continue
@@ -407,6 +414,13 @@ class VisualGrasp(Node):
         if not self.skills.grip.wait_for_server(timeout_sec=10):
             self.get_logger().error('gripper action not available')
             return 1
+
+        if self.target_class == 'red_ball':
+            # The DetachableJoint in the SDF welds the target to the flange as
+            # soon as the model is created, keeping whatever offset it had at
+            # t=0 (the target is still sitting on the table).  Release it now,
+            # before the arm moves, so it stays put instead of being dragged.
+            self.skills.detach('detach')
 
         self.clear_scene()
         if not self.set_scene():

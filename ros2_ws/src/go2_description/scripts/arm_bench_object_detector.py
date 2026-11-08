@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Multi-object detector for the standalone arm bench.
 
-Detects the four color-coded tabletop objects, labels them
-(red_ball / blue_cube / green_cylinder / yellow_box), measures their bbox
-depth and publishes:
+Detects the colour-coded tabletop objects (see arm_bench/palette.py for the
+labels and ranges), measures their bbox depth and publishes:
 
     /arm/vision/detections        vision_msgs/Detection2DArray
     /arm/vision/image_annotated   sensor_msgs/Image
@@ -24,19 +23,7 @@ from sensor_msgs.msg import Image
 from vision_msgs.msg import (BoundingBox2D, Detection2D, Detection2DArray,
                              ObjectHypothesisWithPose)
 
-HSV_RANGES = {
-    'red_ball': [((0, 70, 40), (12, 255, 255)),
-                 ((168, 70, 40), (180, 255, 255))],
-    'blue_cube': [((95, 80, 40), (135, 255, 255))],
-    'green_cylinder': [((35, 60, 40), (90, 255, 255))],
-    'yellow_box': [((18, 80, 50), (38, 255, 255))],
-}
-DRAW_COLORS = {
-    'red_ball': (0, 0, 255),
-    'blue_cube': (255, 100, 0),
-    'green_cylinder': (0, 200, 0),
-    'yellow_box': (0, 220, 220),
-}
+from arm_bench.palette import DRAW_COLORS, HSV_RANGES, MAX_DEPTH
 
 
 class ObjectDetector(Node):
@@ -108,13 +95,28 @@ class ObjectDetector(Node):
                 mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not contours:
                 continue
-            contour = max(contours, key=cv2.contourArea)
-            area = cv2.contourArea(contour)
-            if area < self.min_area:
+            # Take the largest blob that also passes the optional depth
+            # gate.  The gate matters for the white class: the grey floor
+            # in the distance is the same colour family as the milk carton,
+            # so the biggest blob is not necessarily the object we want.
+            far = MAX_DEPTH.get(name)
+            pick = None
+            for candidate in sorted(contours, key=cv2.contourArea,
+                                    reverse=True):
+                area = cv2.contourArea(candidate)
+                if area < self.min_area:
+                    break
+                x, y, bw, bh = cv2.boundingRect(candidate)
+                depth_m, ratio = self._depth_median(x + bw / 2.0,
+                                                    y + bh / 2.0, bw, bh)
+                if far is not None and not 0.05 < depth_m <= far:
+                    continue
+                pick = (area, x, y, bw, bh, depth_m, ratio)
+                break
+            if pick is None:
                 continue
-            x, y, bw, bh = cv2.boundingRect(contour)
+            area, x, y, bw, bh, depth_m, ratio = pick
             u, v = x + bw / 2.0, y + bh / 2.0
-            depth_m, ratio = self._depth_median(u, v, bw, bh)
 
             det = Detection2D()
             det.header = out.header

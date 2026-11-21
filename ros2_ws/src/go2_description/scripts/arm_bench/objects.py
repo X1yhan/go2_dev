@@ -15,38 +15,22 @@ TABLE_X_MAX = 0.34
 TABLE_Y_LIMIT = 0.32
 
 OBJECTS = {
-    'red_ball': {
-        'model': 'target_ball', 'shape': 'sphere',
-        'dims': [0.035], 'half_height': 0.035, 'radius': 0.035,
-        'grip_offset': 0.17, 'close': 0.0, 'open': 0.05,
-        'default': (0.215, 0.0, 0.035),
-    },
     'blue_cube': {
         'model': 'blue_cube', 'shape': 'box',
         'dims': [0.07, 0.07, 0.07], 'half_height': 0.035, 'radius': 0.0,
-        'grip_offset': 0.17, 'close': 0.0, 'open': 0.04,
-        'default': (0.265, -0.175, 0.035),
-    },
-    'green_cylinder': {
-        'model': 'green_cylinder', 'shape': 'cylinder',
-        'dims': [0.10, 0.04], 'half_height': 0.05, 'radius': 0.0,
-        'grip_offset': 0.15, 'close': 0.028, 'open': 0.04,
-        'default': (0.135, 0.215, 0.05),
-    },
-    'yellow_box': {
-        'model': 'yellow_box', 'shape': 'box',
-        'dims': [0.10, 0.075, 0.07], 'half_height': 0.035, 'radius': 0.0,
-        'grip_offset': 0.17, 'close': 0.025, 'open': 0.04,
-        'default': (0.265, 0.175, 0.035),
+        'grip_offset': 0.17, 'close': 0.0, 'open': 0.05,
+        'default': (0.210, 0.0, 0.035),
     },
 }
 
 LABEL_CN = {
-    'red_ball': '红球',
     'blue_cube': '蓝方块',
-    'green_cylinder': '绿圆柱',
-    'yellow_box': '黄盒子',
 }
+
+# Where place_mode=on_table puts the object, in base_link, on the table
+# surface (z = 0 in the base frame).  Right of and behind the pick point, so
+# the carry is visible while staying inside the reachable band.
+DEFAULT_PLACE_XY = (0.255, -0.145)
 
 SHAPE_SPHERE = 'sphere'
 SHAPE_BOX = 'box'

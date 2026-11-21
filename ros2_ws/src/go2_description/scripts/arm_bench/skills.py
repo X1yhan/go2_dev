@@ -311,9 +311,13 @@ class ArmSkills:
         goal.trajectory.points = [point]
         return self.send(self.grip, goal, 0)
 
-    def detach(self, action):
-        """Attach/detach the simulated ball to the gripper (Gazebo only)."""
-        topic = '/target_ball/%s' % action
+    def detach(self, action, model='blue_cube'):
+        """Attach/detach a simulated object to the gripper (Gazebo only).
+
+        `model` is the world model the DetachableJoint plugin was created
+        for; the plugin listens on /<model>/attach and /<model>/detach.
+        """
+        topic = '/%s/%s' % (model, action)
         try:
             subprocess.run(
                 ['ign', 'topic', '-t', topic,

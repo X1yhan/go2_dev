@@ -153,11 +153,11 @@ def _gz_robot_description(urdf, pkg_share, gripper, camera, width, height,
             '<plugin filename="ignition-gazebo-detachable-joint-system" '
             'name="ignition::gazebo::systems::DetachableJoint">'
             '<parent_link>Link7</parent_link>'
-            '<child_model>target_ball</child_model>'
+            '<child_model>blue_cube</child_model>'
             '<child_link>link</child_link>'
-            '<detach_topic>/target_ball/detach</detach_topic>'
-            '<attach_topic>/target_ball/attach</attach_topic>'
-            '<output_topic>/target_ball/state</output_topic>'
+            '<detach_topic>/blue_cube/detach</detach_topic>'
+            '<attach_topic>/blue_cube/attach</attach_topic>'
+            '<output_topic>/blue_cube/state</output_topic>'
             '</plugin></gazebo>'
         )
     if camera != 'none':
@@ -260,13 +260,7 @@ def generate_launch_description():
                 '[ignition.msgs.CameraInfo',
                 f'{CAMERA_TOPIC}/points@sensor_msgs/msg/PointCloud2'
                 '[ignition.msgs.PointCloudPacked',
-                '/model/target_ball/odometry@nav_msgs/msg/Odometry'
-                '[ignition.msgs.Odometry',
                 '/model/blue_cube/odometry@nav_msgs/msg/Odometry'
-                '[ignition.msgs.Odometry',
-                '/model/green_cylinder/odometry@nav_msgs/msg/Odometry'
-                '[ignition.msgs.Odometry',
-                '/model/yellow_box/odometry@nav_msgs/msg/Odometry'
                 '[ignition.msgs.Odometry',
             ]
             nodes.append(TimerAction(period=2.0, actions=[

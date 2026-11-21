@@ -6,10 +6,9 @@ Rules:
     Every motion command shows the parsed plan and asks for confirmation.
 
 Examples:
-    抓红球
-    去抓红球,放到黄盒子上
-    把蓝方块放到绿圆柱旁边
-    抓红球放到黄盒子上,然后抓蓝方块放到绿圆柱旁边
+    抓蓝方块
+    把蓝方块放到台面上
+    去抓蓝方块,放到台面上
     桌上有什么
 
 The parsing itself lives in `arm_bench/language.py` and imports nothing
@@ -35,11 +34,12 @@ class Shell:
     def run_action(self, action):
         params = ['--ros-args', '-p', 'target_class:=%s' % action['pick']]
         if action['action'] == 'pick_place':
-            params += [
-                '-p', 'place_class:=%s' % action['place'],
-                '-p', 'place_mode:=%s' % action['mode'],
-                '-p', 'place_offset:=0.05',
-            ]
+            params += ['-p', 'place_mode:=%s' % action['mode']]
+            if action['mode'] != 'on_table':
+                params += [
+                    '-p', 'place_class:=%s' % action['place'],
+                    '-p', 'place_offset:=0.05',
+                ]
         cmd = ['ros2', 'run', 'go2_description',
                'arm_bench_visual_grasp.py'] + params
         print('  执行: %s' % ' '.join(cmd))
@@ -82,7 +82,7 @@ def main():
                 kind, payload = parse_command(line)
             except CommandError as exc:
                 print('没听懂: %s' % exc)
-                print('示例: 去抓红球,放到黄盒子上')
+                print('示例: 把蓝方块放到台面上')
                 continue
             if kind == 'exit':
                 print('再见。')

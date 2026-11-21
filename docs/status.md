@@ -6,6 +6,46 @@
 
 ## 已完成
 
+### 单物体抓放任务(`2026-11-21`)
+
+场景按要求收缩成两个物体：一张**绿色台面**（0.9 x 0.8 x 0.6 m，台面 z=0.6）
+和一个**7 cm 蓝色正方体**（`(0.210, 0.000)` 在台面上），任务是"用腕部相机找到
+蓝方块 → 抓起来 → 放到台面另一处"。
+
+- 世界 `worlds/arm_bench.sdf` 只剩 `ground_plane` / `table` / `blue_cube`；
+  桌子材质改成绿色（ambient `0.06 0.32 0.10`、diffuse `0.10 0.52 0.16`），
+  它的色相约 60-70，和蓝色的 95-135 相距很远，不会被当成物体检出来。
+- 新增放置模式 `on_table`：目标点是 `place_xy` 参数（base_link、台面 z=0），
+  默认 `(0.255, -0.145)`（常量在 `arm_bench/objects.py` 的 `DEFAULT_PLACE_XY`，
+  L5 解析层要拿到它就能显示"放到台面上(0.255, -0.145)"）。高度用
+  `geometry.place_beside()` 那套算术：`release_z = half + grip_offset +
+  clearance`，`expected_z = half`。
+- `arm_bench/language.py` 增加 `TABLE_ALIAS = 'table'` 与 `TABLE_WORDS`：
+  "放到台面上 / 桌面上 / 台子上"解析成 `{'place': 'table', 'mode': 'on_table'}`，
+  台面不是 `OBJECTS` 里的物体（它不是能被抓的东西）。
+- `grasp.py` 的 `place_object()` 拆出 `_carry_and_release(x, y, release_z,
+  expected_z, desc)`，`on_top` / `beside` / `on_table` 共用同一段搬运-释放-复检。
+- **吸附泛化**：`skills.detach(action, model='blue_cube')` 不再写死
+  `/target_ball/...`；`run()` 开头无条件 detach（插件在模型载入时就把目标焊在
+  法兰上），闭合后 attach，释放后再 detach。DetachableJoint 的 child_model 与
+  话题都改成 `blue_cube`。
+
+实测（Ubuntu，`ROS_DOMAIN_ID=42` `IGN_PARTITION=go2look`）：
+
+```
+default view: blue_cube
+VISIBLE blue_cube base=(0.225, 0.001, 0.035)      # SDF 真值 (0.210, 0, 0.035)
+at grasp Link7=(0.225,0.001,0.207)
+抓取校验: 手指=[0.026, 0.026]
+placing on the table at base (0.255, -0.145)
+放置视觉复检: blue_cube base=(0.254, -0.144, 0.035), expected_z=0.035
+PLACE SUCCESS blue_cube -> table: err_xy=0.001
+```
+
+真值 `ign model -m blue_cube -p` 是 `(0.2396, -0.1450, 0.635)`，即实际落点比
+指令点短 1.5 cm（视觉复检按"看到的位置"算 1 mm，两个数都对得上：视觉看到的
+位置和真值差 1.4 cm，是这一档距离的常规误差）。
+
 ### 放大台面 + 修吸附与 planning scene(`2026-11-08` 加，`2026-11-21` 收缩)
 
 台面 `0.6 x 0.6` → **`0.9 x 0.8 m`**（中心挪到 `x=0.08`，台面仍 `z=0.6`；

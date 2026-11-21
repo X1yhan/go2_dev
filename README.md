@@ -12,10 +12,10 @@ Unitree Go2 EDU 的 ROS2 仿真、视觉与机械臂开发工程。
 - 独立视觉仿真 `vision_sim`：D435i + 移动目标 + 3D 定位精度评估
 - 狗载视觉 `go2_vision`：红球检测 + 相机/雷达融合定位
 - 狗背 RM75 机械臂：URDF 拼接、ros2_control、MoveIt2 规划
-- 独立机械臂仿真 `arm_bench`：RM75 + D435i RGB-D + 夹爪，固定在正方体桌面上
+- 独立机械臂仿真 `arm_bench`：RM75 + D435i RGB-D + 夹爪，固定在一张绿色台面上
 - 简单视觉抓取：相机检测桌面红球 → 深度反投影 → MoveIt 抓取
-- 多物体识别抓取：红球/蓝方块/绿圆柱/黄盒子按 `target_class` 选择并抓取
-- 自然语言交互：终端输入“把红球放到黄盒子旁边”等中文指令，确认后执行
+- 视觉抓取 + 放置：相机检测蓝方块 → 反投影 → 抓取 → 搬到台面另一处放下
+- 自然语言交互：终端输入“把蓝方块放到台面上”等中文指令，确认后执行
 - **机械臂抓球（本文重点）**：
   - `grasp_ball.py`：固定位置绿球抓取，已验证球从 z=0.30m 抬到 z=0.45m
   - `chase_grasp.py`：狗追运动球 + 侧向拦截抓取
@@ -481,8 +481,8 @@ ros2 launch go2_description arm_bench.launch.py gripper:=none
 
 启动内容：
 
-- 世界 `worlds/arm_bench.sdf`：地面、0.9 x 0.8 m 的桌子（台面 z=0.6），
-  桌面上 4 个可抓物体（各带 odometry）：红球 / 蓝方块 / 绿圆柱 / 黄盒子
+- 世界 `worlds/arm_bench.sdf`：地面、0.9 x 0.8 m 的绿色台面（台面 z=0.6），
+  台面上 1 个可抓物体（带 odometry）：7 cm 蓝色正方体
 - 机械臂基座在 `(0, 0, 0.6)`，通过固定关节锁在世界系
 - 控制器：`joint_state_broadcaster`、`rm_group_controller`、
   `gripper_controller`
@@ -660,7 +660,7 @@ scripts/check_layers.sh       # 铁律：L5 不碰 MoveIt/OpenCV；L2 不碰 mov
 ```bash
 cd ros2_ws/src/go2_description/scripts && python3 -c "
 from arm_bench.language import parse_command
-print(parse_command('抓红球,放到黄盒子上'))"
+print(parse_command('把蓝方块放到台面上'))"
 ```
 
 话题名、参数名、节点名、碰撞体 id 全部没变，RS 和旧命令零感知。
@@ -700,17 +700,17 @@ ros2 run go2_description arm_bench_language.py
 交互示例：
 
 ```text
-指令> 把红球放到黄盒子旁边
+指令> 把蓝方块放到台面上
 解析结果:
-1. 抓取 红球(red_ball) → 放到 黄盒子(yellow_box) 旁边(3cm 空位)
+1. 抓取 蓝方块(blue_cube) → 放到台面上(0.255, -0.145)
 确认执行? [y/N] y
-[1/1] 抓取红球 → 放到黄盒旁边
+[1/1] 抓取 蓝方块 → 放到台面上
   ...（MoveIt/夹爪/odometry 日志）...
-  PLACE SUCCESS red_ball -> yellow_box ...
+  PLACE SUCCESS blue_cube -> table ...
 完成。
 指令> 桌上有什么
 当前物体(标签/是否可见/base_link 坐标):
-  red_ball 可见 (0.205, 0.027, 0.035)
+  blue_cube 可见 (0.210, 0.000, 0.035)
   ...
 指令> 结束了
 再见。

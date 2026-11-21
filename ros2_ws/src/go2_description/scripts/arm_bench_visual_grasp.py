@@ -14,7 +14,7 @@ Usage:
     ros2 run go2_description arm_bench_visual_grasp.py \
         --ros-args -p target_class:=blue_cube
     ros2 run go2_description arm_bench_visual_grasp.py \
-        --ros-args -p target_class:=green_cylinder -p detect_only:=true
+        --ros-args -p detect_only:=true
 
 This file is now only the entry point.  The implementation lives in the
 `arm_bench` package next to it:

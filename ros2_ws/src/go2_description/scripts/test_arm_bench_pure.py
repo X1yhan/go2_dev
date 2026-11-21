@@ -30,16 +30,19 @@ def check_near(name, got, want, tol=1e-9):
 
 
 def test_language():
-    check('pick', parse_command('抓红球'),
-          ('actions', [{'action': 'pick', 'pick': 'red_ball'}]))
-    check('pick_place', parse_command('去抓红球,放到黄盒子上'),
-          ('actions', [{'action': 'pick_place', 'pick': 'red_ball',
-                        'place': 'yellow_box', 'mode': 'on_top'}]))
-    check('beside', parse_command('把蓝方块放到绿圆柱旁边'),
+    check('pick', parse_command('抓蓝方块'),
+          ('actions', [{'action': 'pick', 'pick': 'blue_cube'}]))
+    check('cube', parse_command('抓正方体'),
+          ('actions', [{'action': 'pick', 'pick': 'blue_cube'}]))
+    check('pick_place_table', parse_command('把蓝方块放到台面上'),
           ('actions', [{'action': 'pick_place', 'pick': 'blue_cube',
-                        'place': 'green_cylinder', 'mode': 'beside'}]))
-    two = parse_command('抓红球放到黄盒子上,然后抓蓝方块放到绿圆柱旁边')[1]
-    check('two_steps', len(two), 2)
+                        'place': 'table', 'mode': 'on_table'}]))
+    check('pick_place_table2', parse_command('去抓蓝方块,放到桌面上'),
+          ('actions', [{'action': 'pick_place', 'pick': 'blue_cube',
+                        'place': 'table', 'mode': 'on_table'}]))
+    check('two_steps_len',
+          len(parse_command('把蓝方块放到台面上,然后再把蓝方块放到台面上')[1]),
+          2)
     check('query', parse_command('桌上有什么')[0], 'query')
     check('help', parse_command('帮助')[0], 'help')
     check('exit', parse_command('结束了')[0], 'exit')
@@ -48,37 +51,30 @@ def test_language():
         FAILS.append('unknown verb should raise CommandError')
     except CommandError:
         pass
-    text = describe(parse_command('抓红球,放到黄盒子上')[1])
-    if '红球' not in text or '黄盒子' not in text:
+    text = describe(parse_command('把蓝方块放到台面上')[1])
+    if '蓝方块' not in text or '台面' not in text:
         FAILS.append('describe lost the Chinese labels: %r' % text)
-    errs = validate_actions(parse_command('抓红球,放到黄盒子上')[1])
+    errs = validate_actions(parse_command('把蓝方块放到台面上')[1])
     check('validate_ok', errs, None)   # 通过时返回 None
 
 
 def test_objects():
-    check('labels', sorted(objects.OBJECTS), sorted(
-        ['red_ball', 'blue_cube', 'green_cylinder', 'yellow_box']))
-    check('model', objects.OBJECTS['red_ball']['model'], 'target_ball')
-    check_near('ball_r', objects.OBJECTS['red_ball']['radius'], 0.035)
-    check_near('held_sphere', objects.held_width(objects.OBJECTS['red_ball']), 0.07)
-    check_near('held_box', objects.held_width(objects.OBJECTS['yellow_box']), 0.10)
-    check_near('held_cyl', objects.held_width(objects.OBJECTS['green_cylinder']),
-               0.08)
+    check('labels', sorted(objects.OBJECTS), ['blue_cube'])
+    check('model', objects.OBJECTS['blue_cube']['model'], 'blue_cube')
+    check_near('cube_half', objects.OBJECTS['blue_cube']['half_height'], 0.035)
+    check_near('held_cube', objects.held_width(objects.OBJECTS['blue_cube']), 0.07)
+    check_near('place_xy_x', objects.DEFAULT_PLACE_XY[0], 0.255)
 
 
 def test_geometry():
-    cfg = objects.OBJECTS['red_ball']
-    pre, grasp = geometry.grasp_pose((0.2, 0.0, 0.035), cfg, 0.17, 0.10)
+    cfg = objects.OBJECTS['blue_cube']
+    pre, grasp = geometry.grasp_pose((0.21, 0.0, 0.035), cfg, 0.17, 0.10)
     check_near('grasp_z', grasp[2], 0.035 + 0.17)
     check_near('pre_z', pre[2], 0.035 + 0.17 + 0.10)
-    release_z, expected_z = geometry.place_on_top(
-        (0.25, 0.16, 0.035), cfg, objects.OBJECTS['yellow_box'], 0.17, 0.0)
-    check_near('on_top_release', release_z, 0.035 + 0.035 + 0.035 + 0.17)
-    # expected = 盒顶(0.07) + 球半高(0.035)
-    check_near('on_top_expected', expected_z, 0.105)
-    beside_z, beside_expected = geometry.place_beside(cfg, 0.17, 0.0)
-    check_near('beside_release', beside_z, 0.035 + 0.17)
-    check_near('beside_expected', beside_expected, 0.035)
+    # on_table 与 beside 用同一套高度算术:桌面 z=0
+    release_z, expected_z = geometry.place_beside(cfg, 0.17, 0.0)
+    check_near('table_release', release_z, 0.035 + 0.17)
+    check_near('table_expected', expected_z, 0.035)
     check_near('release_q', geometry.release_q(0.032), 0.01)
     check_near('release_q_floor', geometry.release_q(0.01), 0.0)
     # 反投影:光心射线上的点应回到同一像素
@@ -86,8 +82,8 @@ def test_geometry():
     check_near('deproject_u', geometry.deproject(400, 240, 0.5, k)[0],
                (400 - 320) * 0.5 / 600.0)
     spot = geometry.free_beside_spot(
-        (0.25, 0.16, 0.035), {}, cfg, objects.OBJECTS['yellow_box'],
-        'yellow_box', 'red_ball', 0.03)
+        (0.25, 0.16, 0.035), {}, cfg, objects.OBJECTS['blue_cube'],
+        'blue_cube', 'blue_cube', 0.03)
     if spot is None:
         FAILS.append('free_beside_spot returned None for an empty table')
     else:
@@ -101,18 +97,18 @@ def test_geometry():
 def test_scene():
     m = scene.SceneModel()
     for i, pt in enumerate([(0.1, 0.0, 0.0), (0.12, 0.02, 0.0), (0.11, 0.0, 0.0)]):
-        m.add('red_ball', pt, 100.0, i)
-    m.add('red_ball', (0.9, 0.9, 0.9), 50.0, scene.SCAN_RANK)  # 旧观测,排序靠后
+        m.add('blue_cube', pt, 100.0, i)
+    m.add('blue_cube', (0.9, 0.9, 0.9), 50.0, scene.SCAN_RANK)  # 旧观测,排序靠后
     m.fuse()
     fused = m.seen
-    if 'red_ball' not in fused:
-        FAILS.append('fuse lost red_ball')
+    if 'blue_cube' not in fused:
+        FAILS.append('fuse lost blue_cube')
     else:
         # 4 个观测里有一个 0.9 的离群值,中位数应落在中间两个之间
-        check_near('fuse_x', fused['red_ball'][0], 0.115, 1e-6)
-    m.set_reference('red_ball', (0.2, 0.0, 0.0))
-    check('best_uses_reference', m.best('red_ball')[0], 0.2)
-    check('labels', m.labels(), ['red_ball'])
+        check_near('fuse_x', fused['blue_cube'][0], 0.115, 1e-6)
+    m.set_reference('blue_cube', (0.2, 0.0, 0.0))
+    check('best_uses_reference', m.best('blue_cube')[0], 0.2)
+    check('labels', m.labels(), ['blue_cube'])
     m.reset()
     check('reset', m.labels(), [])
 

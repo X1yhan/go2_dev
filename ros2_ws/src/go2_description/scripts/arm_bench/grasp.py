@@ -28,7 +28,7 @@ from visualization_msgs.msg import Marker
 
 from arm_bench import geometry, world
 from arm_bench.constants import GRIPPER_JOINTS
-from arm_bench.objects import OBJECTS, held_width
+from arm_bench.objects import DEFAULT_PLACE_XY, OBJECTS, held_width
 from arm_bench.scene import SCAN_RANK, SceneModel
 from arm_bench.skills import ArmSkills
 from arm_bench.vision import VisionFrontend
@@ -65,13 +65,15 @@ PLACE_TOL_Z = 0.025
 PLACE_TOL_XY = 0.035
 
 
+
+
 class VisualGrasp(Node):
 
     def __init__(self):
         super().__init__(
             'arm_bench_visual_grasp',
             parameter_overrides=[Parameter('use_sim_time', value=True)])
-        self.declare_parameter('target_class', 'red_ball')
+        self.declare_parameter('target_class', 'blue_cube')
         self.declare_parameter('detections_topic', '/arm/vision/detections')
         self.declare_parameter('ball_radius', 0.035)
         self.declare_parameter('grip_offset', -1.0)
@@ -84,6 +86,9 @@ class VisualGrasp(Node):
         self.declare_parameter('place_mode', 'on_top')
         self.declare_parameter('place_offset', 0.05)
         self.declare_parameter('place_clearance', 0.0)
+        # "x y" in base_link, on the table surface (z = 0 in base frame).
+        # Used by place_mode=on_table; empty means DEFAULT_PLACE_XY.
+        self.declare_parameter('place_xy', '')
         self.declare_parameter('scan_only', False)
 
         self.target_class = str(self.get_parameter('target_class').value)
@@ -93,7 +98,7 @@ class VisualGrasp(Node):
                 (self.target_class, ', '.join(OBJECTS)))
         # Copy, so a -p ball_radius does not leak into the shared table.
         self.cfg = dict(OBJECTS[self.target_class])
-        if self.target_class == 'red_ball':
+        if self.cfg['shape'] == 'sphere':
             self.cfg['radius'] = float(
                 self.get_parameter('ball_radius').value)
 
@@ -115,6 +120,17 @@ class VisualGrasp(Node):
         self.place_offset = float(self.get_parameter('place_offset').value)
         self.place_clearance = float(
             self.get_parameter('place_clearance').value)
+        xy_text = str(self.get_parameter('place_xy').value).replace(',', ' ')
+        if xy_text.strip():
+            parts = xy_text.split()
+            if len(parts) != 2:
+                raise RuntimeError('place_xy needs "x y", got "%s"' % xy_text)
+            self.place_xy = (float(parts[0]), float(parts[1]))
+        else:
+            self.place_xy = DEFAULT_PLACE_XY
+        if self.place_mode not in ('on_top', 'beside', 'on_table'):
+            raise RuntimeError(
+                'place_mode must be on_top, beside or on_table')
         self.place_cfg = None
         if self.place_class:
             if self.place_class not in OBJECTS:
@@ -122,8 +138,9 @@ class VisualGrasp(Node):
                     'unknown place_class "%s"' % self.place_class)
             if self.place_class == self.target_class:
                 raise RuntimeError('place_class must differ from target_class')
-            if self.place_mode not in ('on_top', 'beside'):
-                raise RuntimeError('place_mode must be on_top or beside')
+            if self.place_mode == 'on_table':
+                raise RuntimeError(
+                    'place_mode=on_table does not take a place_class')
             self.place_cfg = dict(OBJECTS[self.place_class])
 
         self.joint_positions = {}
@@ -293,6 +310,15 @@ class VisualGrasp(Node):
         Returns (ok, reason); the reason is short and human readable so the
         language layer can show it without scraping logs.
         """
+        if self.place_mode == 'on_table':
+            x, y = self.place_xy
+            release_z, expected_z = geometry.place_beside(
+                self.cfg, self.grip_offset, self.place_clearance)
+            desc = 'table spot'
+            self.get_logger().info(
+                'placing on the table at base (%.3f, %.3f)' % (x, y))
+            return self._carry_and_release(x, y, release_z, expected_z, desc)
+
         center = self.scene.best(self.place_class)
         if center is None:
             self.get_logger().error(
@@ -325,6 +351,9 @@ class VisualGrasp(Node):
                 self.cfg, self.grip_offset, self.place_clearance)
             desc = '%s beside' % self.place_class
 
+        return self._carry_and_release(x, y, release_z, expected_z, desc)
+
+    def _carry_and_release(self, x, y, release_z, expected_z, desc):
         release = (x, y, release_z)
         above = (x, y, ABOVE_Z)
         self._step('搬运到放置点上方 %s' % (above,))
@@ -362,8 +391,8 @@ class VisualGrasp(Node):
             'opening gripper to release (q=%.3f, width %.3f)'
             % (open_q, width))
         self.skills.grip_to(open_q)
-        if self.target_class == 'red_ball' and self.skills.detach('detach'):
-            self._step('target_ball detach')
+        if self.skills.detach('detach'):
+            self._step('%s detach' % self.cfg['model'])
         time.sleep(0.8)
 
         lift = (x, y, ABOVE_Z)
@@ -401,8 +430,8 @@ class VisualGrasp(Node):
             'PLACE %s %s -> %s: visual base (%.3f, %.3f, %.3f), '
             'expected z=%.3f, err_xy=%.3f' %
             ('SUCCESS' if success else 'FAILED', self.target_class,
-             self.place_class, point[0], point[1], point[2], expected_z,
-             error_xy))
+             self.place_class or 'table', point[0], point[1], point[2],
+             expected_z, error_xy))
         return success, 'ok' if success else 'visual check failed'
 
     # -- the task --------------------------------------------------------
@@ -415,19 +444,18 @@ class VisualGrasp(Node):
             self.get_logger().error('gripper action not available')
             return 1
 
-        if self.target_class == 'red_ball':
-            # The DetachableJoint in the SDF welds the target to the flange as
-            # soon as the model is created, keeping whatever offset it had at
-            # t=0 (the target is still sitting on the table).  Release it now,
-            # before the arm moves, so it stays put instead of being dragged.
-            self.skills.detach('detach')
+        # The DetachableJoint in the SDF welds the target to the flange as
+        # soon as the model is created, keeping whatever offset it had at
+        # t=0 (the target is still sitting on the table).  Release it now,
+        # before the arm moves, so it stays put instead of being dragged.
+        self.skills.detach('detach')
 
         self.clear_scene()
         if not self.set_scene():
             self.get_logger().warn('could not load table collision box')
 
         required = [self.target_class]
-        if self.place_class:
+        if self.place_class and self.place_mode != 'on_table':
             required.append(self.place_class)
         scan_required = None if (self.scan_only or self.detect_only) \
             else required
@@ -515,8 +543,8 @@ class VisualGrasp(Node):
         fingers = [round(self.joint_positions.get(joint, -1.0), 4)
                    for joint in GRIPPER_JOINTS]
         self._step('抓取校验: 手指=%s (物体应夹在指间)' % fingers)
-        if self.target_class == 'red_ball' and self.skills.detach('attach'):
-            self._step('target_ball attach')
+        if self.skills.detach('attach'):
+            self._step('%s attach' % self.cfg['model'])
 
         self.get_logger().info('lifting to %s' % (lift,))
         ok, fraction = self.skills.cartesian([lift])
@@ -533,7 +561,7 @@ class VisualGrasp(Node):
                    for joint in GRIPPER_JOINTS]
         self._step('已抬起 (%.3f, %.3f, %.3f), 手指=%s'
                    % (lift + (fingers,)))
-        if not self.place_class:
+        if not self.place_class and self.place_mode != 'on_table':
             return 0
         placed, _reason = self.place_object()
         return 0 if placed else 1

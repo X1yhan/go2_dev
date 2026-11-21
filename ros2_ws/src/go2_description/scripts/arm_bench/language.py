@@ -4,26 +4,32 @@ Layer L5.  Parsing is pure text work, so it can be tested without a
 simulator:
 
     python3 -c "from arm_bench.language import parse_command; \\
-                print(parse_command('抓红球放到黄盒子上'))"
+                print(parse_command('把蓝方块放到台面上'))"
+
+The scene has one graspable object (a blue cube) on a green table, so the
+only destinations are "onto the table surface" (place=TABLE_ALIAS, mode
+on_table) and, if more objects are added later, the usual on_top/beside.
 
 The REPL and the subprocess calls that actually move the arm stay in
 `arm_bench_language.py`.
 """
 import re
 
-from arm_bench.objects import LABEL_CN, OBJECTS
+from arm_bench.objects import DEFAULT_PLACE_XY, LABEL_CN, OBJECTS
 
 ALIASES = [
-    ('红色的球', 'red_ball'), ('红色球', 'red_ball'), ('红球', 'red_ball'),
-    ('小球', 'red_ball'), ('球', 'red_ball'),
     ('蓝色的方块', 'blue_cube'), ('蓝色方块', 'blue_cube'),
-    ('蓝色立方体', 'blue_cube'), ('蓝方块', 'blue_cube'), ('蓝块', 'blue_cube'),
-    ('绿色的圆柱', 'green_cylinder'), ('绿色圆柱', 'green_cylinder'),
-    ('绿圆柱', 'green_cylinder'), ('圆柱', 'green_cylinder'),
-    ('黄色的盒子', 'yellow_box'), ('黄色盒子', 'yellow_box'),
-    ('黄盒子', 'yellow_box'), ('黄盒', 'yellow_box'),
-    ('黄色方块', 'yellow_box'),
+    ('蓝色立方体', 'blue_cube'), ('蓝色的正方体', 'blue_cube'),
+    ('蓝色正方体', 'blue_cube'), ('蓝方块', 'blue_cube'),
+    ('蓝块', 'blue_cube'), ('蓝方块儿', 'blue_cube'),
+    ('正方体', 'blue_cube'), ('立方体', 'blue_cube'), ('方块', 'blue_cube'),
 ]
+
+# The table is not an object in OBJECTS: it is a place, not something to
+# pick up.  Saying "放到台面上" maps to place_mode=on_table.
+TABLE_ALIAS = 'table'
+TABLE_WORDS = ('台面上', '台面', '桌面上', '桌面', '台子上', '台子',
+               '桌子上', '桌子')
 PLACE_KEYS = ('放到', '放在', '摆到', '搁到', '拿到', '移到', '移动到')
 PICK_VERBS = ('抓', '拿', '取', '夹')
 YES_WORDS = ('y', 'yes', '是', '确认', '执行', '可以', '好', '行', 'ok')
@@ -42,21 +48,19 @@ FULL2HALF = {
 HELP = """
 arm_bench 自然语言控制
   抓取类:
-    抓红球
-    去抓红球,放到黄盒子上
-    把蓝方块放到绿圆柱旁边
-    抓红球放到黄盒子上,然后抓蓝方块放到绿圆柱旁边
+    抓蓝方块
+    把蓝方块放到台面上
+    去抓蓝方块,放到台面上
   查询/控制:
     桌上有什么 | 查询物体          (会环视扫描台面)
     帮助
     停止              (空闲时)
     Ctrl+C            中止当前执行
     结束了 / 退出 / q  (结束程序)
-  物体: 红球 / 蓝方块 / 绿圆柱 / 黄盒子
+  物体: 蓝方块
   说明:
-    - 多步指令用“然后 / 再 / 接着 / ；”连接
+    - 台面是一个绿色大长方体,不是可抓物体
     - 动作执行前会显示解析结果并请求确认,默认不执行
-    - “放到...上”是堆叠(仅支持方块/黄盒子),“放到...旁边”自动找 3cm 空位
 """
 
 BESIDE_HINTS = ('旁边', '旁', '边上', '侧', '附近', '左边', '右边')
@@ -89,6 +93,10 @@ def _mentions(text):
     return found
 
 
+def _says_table(text):
+    return any(word in text for word in TABLE_WORDS)
+
+
 def _place_mode(after, mention_end):
     tail = after[mention_end:]
     if any(word in tail for word in BESIDE_HINTS):
@@ -106,7 +114,7 @@ def _parse_clause(text):
     if place_pos < 0:
         mentioned = _mentions(text)
         if not mentioned:
-            raise CommandError('没有识别到物体。可用: 红球、蓝方块、绿圆柱、黄盒子')
+            raise CommandError('没有识别到物体。可用: 蓝方块')
         if len(mentioned) > 1:
             raise CommandError('一次只能抓一个物体')
         return {'action': 'pick', 'pick': mentioned[0][2]}
@@ -121,6 +129,13 @@ def _parse_clause(text):
                     'mode': _place_mode(after, places[0][1])}
         raise CommandError('没说抓什么、也没说放哪里')
     if not places:
+        if _says_table(after):
+            return {
+                'action': 'pick_place',
+                'pick': picks[0][2],
+                'place': TABLE_ALIAS,
+                'mode': 'on_table',
+            }
         raise CommandError('没说放到哪里')
     if len(picks) > 1:
         raise CommandError('一次只能抓一个物体')
@@ -171,7 +186,7 @@ def parse_command(line):
     if any(word in text for word in QUERY_WORDS):
         return 'query', None
     if any(colour in text for colour in OTHER_COLOURS) and _mentions(text):
-        raise CommandError('只认识红/蓝/绿/黄四种颜色')
+        raise CommandError('这个场景里只有一个蓝色方块')
 
     parts = []
     for chunk in re.split(r'(?:然后|接着|；|;)', text):
@@ -207,9 +222,12 @@ def validate_actions(actions):
     for action in actions:
         if action['pick'] not in OBJECTS:
             return '未知物体 %s' % action['pick']
-        if action['action'] == 'pick_place':
-            if action['place'] not in OBJECTS:
-                return '未知物体 %s' % action['place']
+        if action['action'] != 'pick_place':
+            continue
+        if action['mode'] == 'on_table':
+            continue
+        if action['place'] not in OBJECTS:
+            return '未知物体 %s' % action['place']
             if action['pick'] == action['place']:
                 return '抓取和放置目标不能是同一个物体'
             if action['mode'] == 'on_top' and \
@@ -226,6 +244,10 @@ def describe(actions):
         if action['action'] == 'pick':
             lines.append('%d. 抓取 %s(%s)' %
                          (index, LABEL_CN[action['pick']], action['pick']))
+        elif action['mode'] == 'on_table':
+            lines.append('%d. 抓取 %s(%s) → 放到台面上(%.3f, %.3f)' %
+                         (index, LABEL_CN[action['pick']], action['pick'],
+                          DEFAULT_PLACE_XY[0], DEFAULT_PLACE_XY[1]))
         else:
             mode = '上方(堆叠)' if action['mode'] == 'on_top' \
                 else '旁边(3cm 空位)'

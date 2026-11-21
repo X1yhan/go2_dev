@@ -486,7 +486,7 @@
   <div class="card pad" style="margin-top:16px;background:#f2fbf6;border-color:#cbe8d8">
     <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:#0b6b43;margin-bottom:6px">这一处已经修了</div>
     <div style="font-size:13.5px;line-height:1.75;color:#14532d">
-      那张字典现在在 <code>arm_bench/objects.py</code>（106 行，纯 stdlib，没有 import）。
+      那张字典现在在 <code>arm_bench/objects.py</code>（78 行，纯 stdlib，没有 import）。
       语言层只 <code>from arm_bench.objects import LABEL_CN</code>，铁律 1 的 grep 从「有输出」变成「无输出」。
       顺带的好处：<code>parse_command('抓红球,放到黄盒子上')</code> 现在可以在一台没装 ROS 的机器上跑。
     </div>
@@ -721,8 +721,8 @@
 ├── arm_bench_object_detector.py <span class="dim">186  L2 检测节点（颜色表搬到 palette.py）</span>
 └── <span style="color:#5b21b6">arm_bench/</span>
     ├── constants.py  <span class="dim">18   关节名 / 帧名 / 朝向</span>
-    ├── objects.py    <span class="dim">106  OBJECTS 表：4 个测试块 + 3 个日用品</span>
-    ├── palette.py    <span class="dim">45   HSV 色槽 + 深度门（检测与抓取共用）</span>
+    ├── objects.py    <span class="dim">78   OBJECTS 表（4 个可抓物体）</span>
+    ├── palette.py    <span class="dim">38   HSV 色槽（检测与抓取共用，唯一一份）</span>
     ├── geometry.py   <span class="dim">115  纯数学：反投影 / 抓取位 / 放置位</span>
     ├── detection.py  <span class="dim">82   纯函数：图 + 深度 → 点</span>
     ├── scene.py      <span class="dim">64   场景记忆：融合 / 取最优</span>

@@ -268,12 +268,6 @@ def generate_launch_description():
                 '[ignition.msgs.Odometry',
                 '/model/yellow_box/odometry@nav_msgs/msg/Odometry'
                 '[ignition.msgs.Odometry',
-                '/model/milk_carton/odometry@nav_msgs/msg/Odometry'
-                '[ignition.msgs.Odometry',
-                '/model/water_cup/odometry@nav_msgs/msg/Odometry'
-                '[ignition.msgs.Odometry',
-                '/model/tissue_box/odometry@nav_msgs/msg/Odometry'
-                '[ignition.msgs.Odometry',
             ]
             nodes.append(TimerAction(period=2.0, actions=[
                 Node(

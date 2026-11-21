@@ -39,29 +39,6 @@ OBJECTS = {
         'grip_offset': 0.17, 'close': 0.025, 'open': 0.04,
         'default': (0.265, 0.175, 0.035),
     },
-    # Household props.  `grip_offset` is chosen so the flange ends up about
-    # 13.5 cm above the object top -- the distance at which the finger tips
-    # straddle the object instead of stubbing into it.
-    'milk_carton': {
-        'model': 'milk_carton', 'shape': 'box',
-        'dims': [0.065, 0.065, 0.075], 'half_height': 0.0375, 'radius': 0.0,
-        'grip_offset': 0.1675, 'close': 0.0, 'open': 0.045,
-        'default': (0.135, -0.115, 0.0375),
-    },
-    'water_cup': {
-        'model': 'water_cup', 'shape': 'cylinder',
-        'dims': [0.075, 0.035], 'half_height': 0.0375, 'radius': 0.0,
-        'grip_offset': 0.1675, 'close': 0.006, 'open': 0.045,
-        'default': (0.145, 0.09, 0.0375),
-    },
-    'tissue_box': {
-        'model': 'tissue_box', 'shape': 'box',
-        'dims': [0.14, 0.08, 0.06], 'half_height': 0.03, 'radius': 0.0,
-        'grip_offset': 0.165, 'close': 0.012, 'open': 0.045,
-        # The gripper closes across the 8 cm side, not across the 14 cm one.
-        'grip_width': 0.08,
-        'default': (0.09, -0.235, 0.03),
-    },
 }
 
 LABEL_CN = {
@@ -69,9 +46,6 @@ LABEL_CN = {
     'blue_cube': '蓝方块',
     'green_cylinder': '绿圆柱',
     'yellow_box': '黄盒子',
-    'milk_carton': '牛奶盒',
-    'water_cup': '水杯',
-    'tissue_box': '纸巾盒',
 }
 
 SHAPE_SPHERE = 'sphere'
@@ -90,8 +64,6 @@ def footprint_radius(cfg):
 
 def held_width(cfg):
     """Width of the object across the gripper fingers."""
-    if 'grip_width' in cfg:
-        return cfg['grip_width']
     if cfg['shape'] == SHAPE_SPHERE:
         return 2.0 * cfg['radius']
     if cfg['shape'] == SHAPE_CYLINDER:

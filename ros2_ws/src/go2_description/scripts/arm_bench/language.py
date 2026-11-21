@@ -23,12 +23,6 @@ ALIASES = [
     ('黄色的盒子', 'yellow_box'), ('黄色盒子', 'yellow_box'),
     ('黄盒子', 'yellow_box'), ('黄盒', 'yellow_box'),
     ('黄色方块', 'yellow_box'),
-    ('白色的牛奶盒', 'milk_carton'), ('牛奶盒', 'milk_carton'),
-    ('牛奶', 'milk_carton'), ('奶盒', 'milk_carton'),
-    ('蓝色的水杯', 'water_cup'), ('水杯', 'water_cup'), ('杯子', 'water_cup'),
-    ('马克杯', 'water_cup'),
-    ('紫色的纸巾盒', 'tissue_box'), ('纸巾盒', 'tissue_box'),
-    ('纸巾', 'tissue_box'), ('纸盒', 'tissue_box'), ('抽纸', 'tissue_box'),
 ]
 PLACE_KEYS = ('放到', '放在', '摆到', '搁到', '拿到', '移到', '移动到')
 PICK_VERBS = ('抓', '拿', '取', '夹')
@@ -58,7 +52,7 @@ arm_bench 自然语言控制
     停止              (空闲时)
     Ctrl+C            中止当前执行
     结束了 / 退出 / q  (结束程序)
-  物体: 红球 / 蓝方块 / 绿圆柱 / 黄盒子 / 牛奶盒 / 水杯 / 纸巾盒
+  物体: 红球 / 蓝方块 / 绿圆柱 / 黄盒子
   说明:
     - 多步指令用“然后 / 再 / 接着 / ；”连接
     - 动作执行前会显示解析结果并请求确认,默认不执行

@@ -23,7 +23,7 @@ Go2 四足（走）  →  狗载相机+雷达（看）  →  RM75 机械臂（�
 | **整车**（狗 + 臂 + 相机） | `launch/gazebo.launch.py` | 演示"狗走过去、低头抓"，也用于真机移植前的验证 |
 | **独立臂台**（一张桌子 + 机械臂） | `launch/arm_bench.launch.py` | 日常调抓取。启动快、基座不动、相机固定，改一行看一眼不用等整车 |
 
-**为什么要有第二种？** 因为整车的抓取会被步态干扰：狗在喘气、底盘在晃、相机跟着抖。调抓取算法时，你希望 "失败" 只可能来自算法，不来自狗站不稳。`arm_bench` 把狗摘掉，只留臂 + 桌 + 七个物体，启动从 40 秒降到 20 秒，日志也干净。这就是它存在的唯一理由。
+**为什么要有第二种？** 因为整车的抓取会被步态干扰：狗在喘气、底盘在晃、相机跟着抖。调抓取算法时，你希望 "失败" 只可能来自算法，不来自狗站不稳。`arm_bench` 把狗摘掉，只留臂 + 桌 + 四个物体，启动从 40 秒降到 20 秒，日志也干净。这就是它存在的唯一理由。
 
 ---
 
@@ -213,7 +213,7 @@ source scripts/setup_env.sh
 | `xacro/transmission.xacro` | 42 | 关节传动（ros2_control 需要） |
 | `dae/*.dae` | — | 腿部外观 mesh（7 个） |
 | `worlds/go2_sim.sdf` | 167 | 整车仿真世界（地面 + 一个球 `grasp_ball`） |
-| `worlds/arm_bench.sdf` | 394 | 独立臂台世界（9 个 model：地面、0.9x0.8m 桌、7 个可抓物体）。**物体坐标的真值在这** |
+| `worlds/arm_bench.sdf` | 275 | 独立臂台世界（6 个 model：地面、0.9x0.8m 桌、4 个可抓物体）。**物体坐标的真值在这** |
 | `launch/gazebo.launch.py` | 456 | 整车：模型 + `ros2_control` + 相机 + 桥接 + 可选臂 |
 | `launch/arm_bench.launch.py` | 430 | 独立臂台：臂 + 桌 + 相机 + 抓手插件 + 4 路 odometry 桥 |
 | `launch/arm_moveit.launch.py` | 121 | `move_group`（`use_sim_time:=true`，忘了会规划失败） |

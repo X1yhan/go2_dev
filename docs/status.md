@@ -6,13 +6,15 @@
 
 ## 已完成
 
-### 单物体抓放任务(`2026-11-21`)
+### 双物体抓放任务：蓝方块 → 黄盒子顶(`2026-11-21`)
 
-场景按要求收缩成两个物体：一张**绿色台面**（0.9 x 0.8 x 0.6 m，台面 z=0.6）
-和一个**7 cm 蓝色正方体**（`(0.210, 0.000)` 在台面上），任务是"用腕部相机找到
-蓝方块 → 抓起来 → 放到台面另一处"。
+场景按要求收缩成三个 model：一张**绿色台面**（0.9 x 0.8 x 0.6 m，台面 z=0.6）、
+一个**7 cm 蓝色正方体**（抓取目标，`(0.210, 0.000)`）和一个**10 x 10 x 8 cm
+黄色长方体**（放置目标，`(0.215, 0.160)`）。任务是"用腕部相机找到蓝方块 →
+抓起来 → 叠到黄盒子顶上"。
 
-- 世界 `worlds/arm_bench.sdf` 只剩 `ground_plane` / `table` / `blue_cube`；
+- 世界 `worlds/arm_bench.sdf` 只剩 `ground_plane` / `table` / `blue_cube` /
+  `yellow_box`；
   桌子材质改成绿色（ambient `0.06 0.32 0.10`、diffuse `0.10 0.52 0.16`），
   它的色相约 60-70，和蓝色的 95-135 相距很远，不会被当成物体检出来。
 - 新增放置模式 `on_table`：目标点是 `place_xy` 参数（base_link、台面 z=0），
@@ -30,21 +32,46 @@
   法兰上），闭合后 attach，释放后再 detach。DetachableJoint 的 child_model 与
   话题都改成 `blue_cube`。
 
-实测（Ubuntu，`ROS_DOMAIN_ID=42` `IGN_PARTITION=go2look`）：
+- **黄盒子**：`(0.10, 0.10, 0.08)` 的 box，比蓝方块大一号，所以 `on_top` 有
+  足够的顶面接住方块；色相槽放到 `20-34`，并**把饱和度下限提到 140** ——
+  木色/土黄色的台面类表面落在色相 15-20 但饱和度低，这道门比加测距门便宜。
+- **夹爪默认张开**：`grasp.py` 新增参数 `open_on_start`（默认 true），`run()`
+  一开始（detach 之后、扫描之前）先 `grip_to(self.open_q)`，日志
+  `opening gripper (q=0.060)`。以前要等第一条抓取指令走到下降前才张爪。
+- `validate_actions()` 原来是**死代码**：`if action['place'] not in OBJECTS:`
+  后面 `return`，导致"抓取和放置目标不能是同一个物体"和"顶面太小不适合堆叠"
+  两条判断永远不执行。已把缩进修好，现在 `把蓝方块放到蓝方块上` 会被拒绝。
+- 黄盒子也接了 odometry 桥（`/model/yellow_box/odometry`），planning scene
+  节点用它取位姿。
+
+实测（Ubuntu，`ROS_DOMAIN_ID=42` `IGN_PARTITION=go2look`，`-p place_class:=yellow_box
+-p place_mode:=on_top`）：
 
 ```
-default view: blue_cube
-VISIBLE blue_cube base=(0.225, 0.001, 0.035)      # SDF 真值 (0.210, 0, 0.035)
-at grasp Link7=(0.225,0.001,0.207)
+opening gripper (q=0.060)                          # 开局就把夹爪张开
+default view: blue_cube,yellow_box
+VISIBLE blue_cube base=(0.223, 0.001, 0.035)       # SDF 真值 (0.210, 0, 0.035)
+VISIBLE yellow_box base=(0.237, 0.161, 0.040)      # SDF 真值 (0.215, 0.160, 0.040)
+at grasp Link7=(0.230,-0.001,0.207)
 抓取校验: 手指=[0.026, 0.026]
-placing on the table at base (0.255, -0.145)
-放置视觉复检: blue_cube base=(0.254, -0.144, 0.035), expected_z=0.035
-PLACE SUCCESS blue_cube -> table: err_xy=0.001
+placing blue_cube -> yellow_box top at base (0.243, 0.159, 0.285)
+夹爪释放 (q=0.029, 宽度 0.070)  →  blue_cube detach
+放置视觉复检: blue_cube, base=(0.259, 0.160, 0.105), expected_z=0.115
+PLACE SUCCESS blue_cube -> yellow_box: visual base (0.259, 0.160, 0.105),
+              expected z=0.115, err_xy=0.015
 ```
 
-真值 `ign model -m blue_cube -p` 是 `(0.2396, -0.1450, 0.635)`，即实际落点比
-指令点短 1.5 cm（视觉复检按"看到的位置"算 1 mm，两个数都对得上：视觉看到的
-位置和真值差 1.4 cm，是这一档距离的常规误差）。
+`expected_z = 0.115` = 盒子半高 0.04 + 盒心 z 0.04 + 方块半高 0.035；实测
+0.105 比它低 1 cm（方块落下去时略微陷进盒子顶面），但 **z 比台面高 7 cm，
+说明确实落在盒子上**，不是掉在台面。`err_xy=0.015` 是盒面 10 cm 里的 1.5 cm，
+在容差内。
+
+> 注意：抓取过程中日志里 `已抬起 … 手指=[0.0, 0.0]` 是正常的 —— 闭合后
+> `attach` 把方块焊在法兰上，指尖不再受方块阻挡，所以读数回到 0。
+
+旧版（单物体，放到台面 `on_table` 模式，`2026-11-21` 同日早先跑过）：
+`PLACE SUCCESS blue_cube -> table: err_xy=0.001`；语言层端到端
+`err_xy=0.003`。`on_table` 模式保留着，仍可用 `把蓝方块放到台面上` 触发。
 
 ### 放大台面 + 修吸附与 planning scene(`2026-11-08` 加，`2026-11-21` 收缩)
 
@@ -55,8 +82,8 @@ PLACE SUCCESS blue_cube -> table: err_xy=0.001
 `milk_carton` 定位已经准（实测 0.152 vs 真值 0.135），但下降到抓取位后
 `arm did not settle at the grasp pose`（指尖与盒体互相顶住），水杯同类问题，
 纸巾盒更麻烦（14 cm 长边，夹爪要横着夹 8 cm 那面）。既然抓不住，就不该留在
-"可抓目标"里骗人——现在场景、`objects.py`、中文别名、odometry 桥全部移除，
-只剩 4 个稳定可抓的物体。
+"可抓目标"里骗人——现在场景、`objects.py`、中文别名、odometry 桥全部移除。
+（红球 / 黄盒 / 绿圆柱那四个随后也一起删了，见上一节。）
 
 留下的是这几条**与物体无关**的改动：
 

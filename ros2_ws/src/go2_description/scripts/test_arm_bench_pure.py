@@ -40,9 +40,18 @@ def test_language():
     check('pick_place_table2', parse_command('去抓蓝方块,放到桌面上'),
           ('actions', [{'action': 'pick_place', 'pick': 'blue_cube',
                         'place': 'table', 'mode': 'on_table'}]))
+    check('pick_place_box', parse_command('把蓝方块放到黄盒子上'),
+          ('actions', [{'action': 'pick_place', 'pick': 'blue_cube',
+                        'place': 'yellow_box', 'mode': 'on_top'}]))
+    check('pick_place_box2', parse_command('抓蓝方块放到长方体上'),
+          ('actions', [{'action': 'pick_place', 'pick': 'blue_cube',
+                        'place': 'yellow_box', 'mode': 'on_top'}]))
     check('two_steps_len',
           len(parse_command('把蓝方块放到台面上,然后再把蓝方块放到台面上')[1]),
           2)
+    check('same_object_rejected',
+          validate_actions(parse_command('把蓝方块放到蓝方块上')[1]),
+          '抓取和放置目标不能是同一个物体')
     check('query', parse_command('桌上有什么')[0], 'query')
     check('help', parse_command('帮助')[0], 'help')
     check('exit', parse_command('结束了')[0], 'exit')
@@ -59,10 +68,13 @@ def test_language():
 
 
 def test_objects():
-    check('labels', sorted(objects.OBJECTS), ['blue_cube'])
+    check('labels', sorted(objects.OBJECTS), ['blue_cube', 'yellow_box'])
     check('model', objects.OBJECTS['blue_cube']['model'], 'blue_cube')
     check_near('cube_half', objects.OBJECTS['blue_cube']['half_height'], 0.035)
     check_near('held_cube', objects.held_width(objects.OBJECTS['blue_cube']), 0.07)
+    check('box_shape', objects.OBJECTS['yellow_box']['shape'], 'box')
+    check_near('box_half', objects.OBJECTS['yellow_box']['half_height'], 0.04)
+    check_near('held_box', objects.held_width(objects.OBJECTS['yellow_box']), 0.10)
     check_near('place_xy_x', objects.DEFAULT_PLACE_XY[0], 0.255)
 
 

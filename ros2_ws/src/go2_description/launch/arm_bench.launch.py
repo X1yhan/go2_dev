@@ -262,6 +262,8 @@ def generate_launch_description():
                 '[ignition.msgs.PointCloudPacked',
                 '/model/blue_cube/odometry@nav_msgs/msg/Odometry'
                 '[ignition.msgs.Odometry',
+                '/model/yellow_box/odometry@nav_msgs/msg/Odometry'
+                '[ignition.msgs.Odometry',
             ]
             nodes.append(TimerAction(period=2.0, actions=[
                 Node(

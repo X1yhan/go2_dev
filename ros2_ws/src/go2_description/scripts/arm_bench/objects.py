@@ -21,10 +21,19 @@ OBJECTS = {
         'grip_offset': 0.17, 'close': 0.0, 'open': 0.05,
         'default': (0.210, 0.0, 0.035),
     },
+    # The place target.  A box, so it can carry the on_top mode; a bit
+    # larger than the cube so the released cube lands fully on its top face.
+    'yellow_box': {
+        'model': 'yellow_box', 'shape': 'box',
+        'dims': [0.10, 0.10, 0.08], 'half_height': 0.04, 'radius': 0.0,
+        'grip_offset': 0.21, 'close': 0.0, 'open': 0.06,
+        'default': (0.215, 0.160, 0.04),
+    },
 }
 
 LABEL_CN = {
     'blue_cube': '蓝方块',
+    'yellow_box': '黄盒子',
 }
 
 # Where place_mode=on_table puts the object, in base_link, on the table

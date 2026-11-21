@@ -14,7 +14,7 @@ Unitree Go2 EDU 的 ROS2 仿真、视觉与机械臂开发工程。
 - 狗背 RM75 机械臂：URDF 拼接、ros2_control、MoveIt2 规划
 - 独立机械臂仿真 `arm_bench`：RM75 + D435i RGB-D + 夹爪，固定在一张绿色台面上
 - 简单视觉抓取：相机检测桌面红球 → 深度反投影 → MoveIt 抓取
-- 视觉抓取 + 放置：相机检测蓝方块 → 反投影 → 抓取 → 搬到台面另一处放下
+- 视觉抓取 + 放置：相机检测蓝方块 → 反投影 → 抓取 → 叠到黄盒子顶上（也支持放到台面任意点）
 - 自然语言交互：终端输入“把蓝方块放到台面上”等中文指令，确认后执行
 - **机械臂抓球（本文重点）**：
   - `grasp_ball.py`：固定位置绿球抓取，已验证球从 z=0.30m 抬到 z=0.45m
@@ -482,7 +482,8 @@ ros2 launch go2_description arm_bench.launch.py gripper:=none
 启动内容：
 
 - 世界 `worlds/arm_bench.sdf`：地面、0.9 x 0.8 m 的绿色台面（台面 z=0.6），
-  台面上 1 个可抓物体（带 odometry）：7 cm 蓝色正方体
+  台面上 2 个物体（都带 odometry）：7 cm 蓝色正方体（抓取目标）、
+  10 x 10 x 8 cm 黄色长方体（放置目标）
 - 机械臂基座在 `(0, 0, 0.6)`，通过固定关节锁在世界系
 - 控制器：`joint_state_broadcaster`、`rm_group_controller`、
   `gripper_controller`
@@ -660,7 +661,7 @@ scripts/check_layers.sh       # 铁律：L5 不碰 MoveIt/OpenCV；L2 不碰 mov
 ```bash
 cd ros2_ws/src/go2_description/scripts && python3 -c "
 from arm_bench.language import parse_command
-print(parse_command('把蓝方块放到台面上'))"
+print(parse_command('把蓝方块放到黄盒子上'))"
 ```
 
 话题名、参数名、节点名、碰撞体 id 全部没变，RS 和旧命令零感知。
@@ -700,17 +701,18 @@ ros2 run go2_description arm_bench_language.py
 交互示例：
 
 ```text
-指令> 把蓝方块放到台面上
+指令> 把蓝方块放到黄盒子上
 解析结果:
-1. 抓取 蓝方块(blue_cube) → 放到台面上(0.255, -0.145)
+1. 抓取 蓝方块(blue_cube) → 放到 黄盒子(yellow_box) 上方(堆叠)
 确认执行? [y/N] y
-[1/1] 抓取 蓝方块 → 放到台面上
+[1/1] 抓取 蓝方块 → 放到 黄盒子 上方(堆叠)
   ...（MoveIt/夹爪/odometry 日志）...
-  PLACE SUCCESS blue_cube -> table ...
+  PLACE SUCCESS blue_cube -> yellow_box ...
 完成。
 指令> 桌上有什么
 当前物体(标签/是否可见/base_link 坐标):
   blue_cube 可见 (0.210, 0.000, 0.035)
+  yellow_box 可见 (0.215, 0.160, 0.040)
   ...
 指令> 结束了
 再见。

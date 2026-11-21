@@ -80,6 +80,9 @@ class VisualGrasp(Node):
         self.declare_parameter('pre_offset', 0.06)
         self.declare_parameter('lift_offset', 0.18)
         self.declare_parameter('open', 0.06)
+        # Open the gripper as soon as the node starts, so the
+        # bench is never left looking shut before the first move.
+        self.declare_parameter('open_on_start', True)
         self.declare_parameter('close', -1.0)
         self.declare_parameter('detect_only', False)
         self.declare_parameter('place_class', '')
@@ -449,6 +452,10 @@ class VisualGrasp(Node):
         # t=0 (the target is still sitting on the table).  Release it now,
         # before the arm moves, so it stays put instead of being dragged.
         self.skills.detach('detach')
+
+        if bool(self.get_parameter('open_on_start').value):
+            self.get_logger().info('opening gripper (q=%.3f)' % self.open_q)
+            self.skills.grip_to(self.open_q)
 
         self.clear_scene()
         if not self.set_scene():

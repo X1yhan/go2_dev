@@ -23,6 +23,12 @@ ALIASES = [
     ('蓝色正方体', 'blue_cube'), ('蓝方块', 'blue_cube'),
     ('蓝块', 'blue_cube'), ('蓝方块儿', 'blue_cube'),
     ('正方体', 'blue_cube'), ('立方体', 'blue_cube'), ('方块', 'blue_cube'),
+    ('黄色的长方体', 'yellow_box'), ('黄色长方体', 'yellow_box'),
+    ('黄长方体', 'yellow_box'), ('黄色的方块', 'yellow_box'),
+    ('黄色方块', 'yellow_box'), ('黄方块', 'yellow_box'),
+    ('黄色的盒子', 'yellow_box'), ('黄色盒子', 'yellow_box'),
+    ('黄盒子', 'yellow_box'), ('长方体', 'yellow_box'),
+    ('黄块', 'yellow_box'), ('盒子', 'yellow_box'),
 ]
 
 # The table is not an object in OBJECTS: it is a place, not something to
@@ -49,15 +55,16 @@ HELP = """
 arm_bench 自然语言控制
   抓取类:
     抓蓝方块
+    把蓝方块放到黄盒子上
     把蓝方块放到台面上
-    去抓蓝方块,放到台面上
+    去抓蓝方块,放到黄盒子上
   查询/控制:
     桌上有什么 | 查询物体          (会环视扫描台面)
     帮助
     停止              (空闲时)
     Ctrl+C            中止当前执行
     结束了 / 退出 / q  (结束程序)
-  物体: 蓝方块
+  物体: 蓝方块、黄盒子
   说明:
     - 台面是一个绿色大长方体,不是可抓物体
     - 动作执行前会显示解析结果并请求确认,默认不执行
@@ -114,7 +121,7 @@ def _parse_clause(text):
     if place_pos < 0:
         mentioned = _mentions(text)
         if not mentioned:
-            raise CommandError('没有识别到物体。可用: 蓝方块')
+            raise CommandError('没有识别到物体。可用: 蓝方块、黄盒子')
         if len(mentioned) > 1:
             raise CommandError('一次只能抓一个物体')
         return {'action': 'pick', 'pick': mentioned[0][2]}
@@ -186,7 +193,7 @@ def parse_command(line):
     if any(word in text for word in QUERY_WORDS):
         return 'query', None
     if any(colour in text for colour in OTHER_COLOURS) and _mentions(text):
-        raise CommandError('这个场景里只有一个蓝色方块')
+        raise CommandError('这个场景里只有蓝方块和黄盒子')
 
     parts = []
     for chunk in re.split(r'(?:然后|接着|；|;)', text):
@@ -228,13 +235,13 @@ def validate_actions(actions):
             continue
         if action['place'] not in OBJECTS:
             return '未知物体 %s' % action['place']
-            if action['pick'] == action['place']:
-                return '抓取和放置目标不能是同一个物体'
-            if action['mode'] == 'on_top' and \
-                    OBJECTS[action['place']]['shape'] != 'box':
-                return ('%s 顶面太小,不适合堆叠;请说“放到%s旁边”'
-                        % (LABEL_CN[action['place']],
-                           LABEL_CN[action['place']]))
+        if action['pick'] == action['place']:
+            return '抓取和放置目标不能是同一个物体'
+        if action['mode'] == 'on_top' and \
+                OBJECTS[action['place']]['shape'] != 'box':
+            return ('%s 顶面太小,不适合堆叠;请说“放到%s旁边”'
+                    % (LABEL_CN[action['place']],
+                       LABEL_CN[action['place']]))
     return None
 
 
